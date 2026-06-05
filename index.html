@@ -2784,49 +2784,16 @@ function getArrowClass(a) {
   return 'filled-' + cat;
 }
 
-function renderMatchView() {
-  const container = document.getElementById('match-view');
-  const match = getActiveMatch();
-  if (!match) {
-    container.innerHTML = `
-      <div class="match-content">
-        <div class="empty-state">
-          <div class="display">Aucun match</div>
-          <div class="hint">Ajoute un match dans la colonne de gauche pour commencer.</div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const comp = getComps()[ui.activeComp];
-  const archers = getArchers();
-  const safeArchers = archers.map(safeArcher);
-  const g = genderForTeam(getActiveTeam(), ui.activeTeam);
-  const bow = bowForTeam(getActiveTeam(), ui.activeTeam);
-  const isPoulie = bow === 'poulie';
-  const fullVolleyTip = '3 ' + nArcher(g, true) + ' ont déjà tiré cette volée';
-  const matchIdx = comp.matches.findIndex(m => m.id === match.id);
-  const res = matchResult(match);
-  const totals = matchTotal(match);
-  const barrage = matchBarrageScore(match);
-  let poulieRunning = 0;   // running cumulative team score for the poulie format
-
-  let resStatusClass = res.status;
-  let resStatusText = {
-    win: 'Victoire', loss: 'Défaite', tie: 'Égalité', pending: 'En cours'
-  }[res.status];
-
-  // Build scoresheet rows
+function buildMatchRowsHtml(match, archers, g, isPoulie, fullVolleyTip) {
   let rowsHtml = '';
   const shortLabels = uniqueShortArcherNames(archers);
+  let poulieRunning = 0;
   match.volees.forEach((v, vi) => {
     const total = volleyTotal(v);
     const hasArrows = volleyArrowCount(v) > 0;
     const advNum = v.adv === null || v.adv === '' ? null : Number(v.adv);
     let setCellHtml = '<span class="zero">—</span>';
     if (isPoulie) {
-      // Poulie : pas de sets. La colonne montre le cumul courant de l'équipe
-      // (barrage exclu du cumul, marqué « = » comme départage).
       if (v.barrage) {
         setCellHtml = hasArrows ? `<span class="setpt-pair"><span class="our tie-cell">=${total}</span></span>` : '<span class="zero">—</span>';
       } else {
@@ -2851,7 +2818,6 @@ function renderMatchView() {
       } else {
         const [a1, a2] = v.arrows[ai];
         const blockedCls = !archerCanShoot ? ' blocked' : '';
-        // First arrow — always editable (via target) unless archer is blocked
         cellsHtml += `
           <td class="arrow-cell">
             <input class="arrow-input ${getArrowClass(a1)}${blockedCls}" type="text" maxlength="2"
@@ -2859,7 +2825,6 @@ function renderMatchView() {
                    value="${a1 === null ? '' : a1}" readonly autocomplete="off"
                    title="${archerCanShoot ? 'Clique pour saisir avec la cible' : fullVolleyTip}">
           </td>`;
-        // Second arrow — disabled in barrage volleys
         if (isBarrage) {
           cellsHtml += `<td class="arrow-cell second sub-cell"><div class="sub-dash barrage-dash">—</div></td>`;
         } else {
@@ -2906,8 +2871,10 @@ function renderMatchView() {
         <td class="setpts">${setCellHtml}</td>
       </tr>`;
   });
+  return rowsHtml;
+}
 
-  // Archer totals row
+function buildMatchArcherTotalsHtml(match) {
   let archerTotalsHtml = '';
   for (let ai = 0; ai < 4; ai++) {
     const s = archerStats(match, ai);
@@ -2918,9 +2885,15 @@ function renderMatchView() {
       </td>`;
     if (ai < 3) archerTotalsHtml += '<td class="sep" style="border-top: 2px solid var(--ink);"></td>';
   }
+  return archerTotalsHtml;
+}
 
-  container.innerHTML = `
-    <div class="match-content">
+function buildMatchHeaderHtml(match, matchIdx, res, totals, isPoulie, barrage) {
+  const resStatusClass = res.status;
+  const resStatusText = {
+    win: 'Victoire', loss: 'Défaite', tie: 'Égalité', pending: 'En cours'
+  }[res.status];
+  return `
       <div class="match-header">
         <div class="match-meta">
           <div class="match-number">${safeLabel(ui.activeDiscipline)} · ${safeLabel(ui.activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(ui.activeComp)}</div>
@@ -2942,7 +2915,57 @@ function renderMatchView() {
             ? (hasArrowData(match) ? `<div style="font-family:'JetBrains Mono', monospace; font-size:0.72rem; color:var(--ink-mute); margin-top:0.4rem;">${res.our} · ${res.their} pts / 240${barrage.has ? ` · barrage ${barrage.our}·${barrage.their}` : ''}</div>` : '')
             : (hasArrowData(match) ? `<div style="font-family:'JetBrains Mono', monospace; font-size:0.72rem; color:var(--ink-mute); margin-top:0.4rem;">${totals.our} · ${totals.their} pts</div>` : '')}
         </div>
-      </div>
+      </div>`;
+}
+
+function buildMatchStatsCardsHtml(match, archers) {
+  return archers.map((name, ai) => {
+    const s = archerStats(match, ai);
+    const scoreCounts = countArcherScores(match, ai);
+    return `
+            <div class="archer-card">
+              <div class="name">${safeArcher(name)}</div>
+              <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
+              <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
+              <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
+              <div class="stats-row"><span>X / 10 / 9</span><strong>${scoreCounts.x} · ${scoreCounts['10']} · ${scoreCounts['9']}</strong></div>
+            </div>`;
+  }).join('');
+}
+
+function renderMatchView() {
+  const container = document.getElementById('match-view');
+  const match = getActiveMatch();
+  if (!match) {
+    container.innerHTML = `
+      <div class="match-content">
+        <div class="empty-state">
+          <div class="display">Aucun match</div>
+          <div class="hint">Ajoute un match dans la colonne de gauche pour commencer.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const comp = getComps()[ui.activeComp];
+  const archers = getArchers();
+  const safeArchers = archers.map(safeArcher);
+  const g = genderForTeam(getActiveTeam(), ui.activeTeam);
+  const bow = bowForTeam(getActiveTeam(), ui.activeTeam);
+  const isPoulie = bow === 'poulie';
+  const fullVolleyTip = '3 ' + nArcher(g, true) + ' ont déjà tiré cette volée';
+  const matchIdx = comp.matches.findIndex(m => m.id === match.id);
+  const res = matchResult(match);
+  const totals = matchTotal(match);
+  const barrage = matchBarrageScore(match);
+  const rowsHtml = buildMatchRowsHtml(match, archers, g, isPoulie, fullVolleyTip);
+  const archerTotalsHtml = buildMatchArcherTotalsHtml(match);
+  const headerHtml = buildMatchHeaderHtml(match, matchIdx, res, totals, isPoulie, barrage);
+  const statsCardsHtml = buildMatchStatsCardsHtml(match, archers);
+
+  container.innerHTML = `
+    <div class="match-content">
+      ${headerHtml}
 
       <div class="scoresheet-wrap">
         <table class="scoresheet">
@@ -2979,18 +3002,7 @@ function renderMatchView() {
       </div>
 
       <div class="match-stats">
-        ${archers.map((name, ai) => {
-          const s = archerStats(match, ai);
-          const scoreCounts = countArcherScores(match, ai);
-          return `
-            <div class="archer-card">
-              <div class="name">${safeArcher(name)}</div>
-              <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
-              <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
-              <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
-              <div class="stats-row"><span>X / 10 / 9</span><strong>${scoreCounts.x} · ${scoreCounts['10']} · ${scoreCounts['9']}</strong></div>
-            </div>`;
-        }).join('')}
+        ${statsCardsHtml}
       </div>
     </div>
     <button class="fab-target" id="fab-target" title="Saisie tactile (cible)" aria-label="Ouvrir la cible tactile">
