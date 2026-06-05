@@ -1647,14 +1647,14 @@
       <h1>Feuille de match</h1>
     </div>
     <div class="view-toggle">
-      <button id="view-match" class="active">Match</button>
-      <button id="view-grouping">Groupement</button>
-      <button id="view-global">Statistiques</button>
+      <button id="view-match" class="active" aria-pressed="true">Match</button>
+      <button id="view-grouping" aria-pressed="false">Groupement</button>
+      <button id="view-global" aria-pressed="false">Statistiques</button>
     </div>
   </div>
-  <nav class="disc-tabs" id="disc-tabs"></nav>
-  <nav class="team-tabs" id="team-tabs"></nav>
-  <nav class="comp-tabs" id="comp-tabs"></nav>
+  <nav class="disc-tabs" id="disc-tabs" aria-label="Disciplines"></nav>
+  <nav class="team-tabs" id="team-tabs" aria-label="Équipes"></nav>
+  <nav class="comp-tabs" id="comp-tabs" aria-label="Compétitions"></nav>
 </header>
 
 <main>
@@ -1979,6 +1979,29 @@ function toggleCoachMode(e) {
   }
 }
 
+function wireDialogKeyboard(overlay, close) {
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusables = [...overlay.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
+
 function showCoachUnlockModal() {
   // Guard: remove any pre-existing overlay
   document.querySelectorAll('.coach-modal-overlay').forEach(el => el.remove());
@@ -1986,8 +2009,8 @@ function showCoachUnlockModal() {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay coach-modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>Mode coach</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="coach-unlock-title" onclick="event.stopPropagation();">
+      <h3 id="coach-unlock-title">Mode coach</h3>
       <p style="font-size: 0.85rem; color: var(--ink-mute); margin-bottom: 0.75rem;">
         Connecte-toi avec ton compte coach pour activer la saisie.
       </p>
@@ -2007,6 +2030,7 @@ function showCoachUnlockModal() {
   emailInput.focus();
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
 
   const attempt = async () => {
     errorEl.textContent = '';
@@ -2051,8 +2075,8 @@ function showCoachLockModal() {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay coach-modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>Se déconnecter ?</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="coach-lock-title" onclick="event.stopPropagation();">
+      <h3 id="coach-lock-title">Se déconnecter ?</h3>
       <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 1rem;">
         La saisie sera désactivée et tu repasseras en mode spectateur. Tu pourras te
         reconnecter avec ton compte coach à tout moment.
@@ -2065,6 +2089,7 @@ function showCoachLockModal() {
   document.body.appendChild(overlay);
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
 
   overlay.querySelector('#coach-lock-cancel').onclick = close;
   overlay.querySelector('#coach-lock-ok').onclick = async () => {
@@ -2074,6 +2099,7 @@ function showCoachLockModal() {
     showToast('Mode spectateur activé');
   };
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelector('#coach-lock-cancel').focus();
 }
 
 // ─── Firebase Firestore: shared live storage ───────────────────
@@ -2100,8 +2126,20 @@ let firestoreUnsubscribe = null;
 let isApplyingRemote = false;  // Guard to skip echo-save when we get our own write back
 let lastLocalPayload = null;   // Last JSON we wrote — used to compare incoming snapshots
 let firestoreReady = false;
+let lastRemoteSaveErrorAt = 0;
+
+function firebaseConfigIsPlaceholder() {
+  return Object.values(FIREBASE_CONFIG).some(value => !value || /VOTRE_|YOUR_|\.\.\./.test(String(value)));
+}
 
 async function initFirebase() {
+  if (firebaseConfigIsPlaceholder()) {
+    console.info('Firebase config not set: running with local cache only.');
+    firestoreReady = false;
+    setConnectionStatus('local');
+    return;
+  }
+
   try {
     const appMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
     const fsMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js');
@@ -2144,9 +2182,9 @@ async function initFirebase() {
       const remotePayload = data.payload;
       // Ignore echoes of our own writes
       if (remotePayload === lastLocalPayload) return;
+      isApplyingRemote = true;
       try {
         const remoteState = JSON.parse(remotePayload);
-        isApplyingRemote = true;
         state = { ...defaultState(), ...remoteState };
         migrateState();
         // If the match we were viewing got deleted on another device, or the
@@ -2157,9 +2195,9 @@ async function initFirebase() {
         lastLocalPayload = remotePayload;
         // Re-render current view (but don't re-open target modal etc.)
         if (typeof render === 'function') render();
-        isApplyingRemote = false;
       } catch (e) {
         console.error('Bad remote payload:', e);
+      } finally {
         isApplyingRemote = false;
       }
     }, (err) => {
@@ -2404,7 +2442,14 @@ async function saveState() {
 
   // Push to Firestore (the shared source of truth)
   if (firestoreReady) {
-    pushStateToFirestore();  // fire-and-forget
+    pushStateToFirestore().then((ok) => {
+      if (ok) return;
+      const now = Date.now();
+      if (now - lastRemoteSaveErrorAt > 10000) {
+        lastRemoteSaveErrorAt = now;
+        showToast('Sauvegarde distante impossible — données gardées en local');
+      }
+    });
   } else {
     setConnectionStatus('local');
   }
@@ -3525,13 +3570,13 @@ function renderTargetModal() {
   overlay.id = 'target-modal-overlay';
   overlay.className = 'target-modal-overlay';
   overlay.innerHTML = `
-    <div class="target-modal" onclick="event.stopPropagation();">
+    <div class="target-modal" role="dialog" aria-modal="true" aria-labelledby="target-modal-title" onclick="event.stopPropagation();">
       <div class="target-modal-head">
         <div>
-            <div class="who"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${safeArcher(archerName)}</div>
+            <div class="who" id="target-modal-title"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${safeArcher(archerName)}</div>
             <div class="when">${escapeHtml(subtitleText)}</div>
         </div>
-        <button class="target-close" id="target-close-btn" title="Fermer">✕</button>
+        <button class="target-close" id="target-close-btn" title="Fermer" aria-label="Fermer la cible tactile">✕</button>
       </div>
 
       <div class="target-wrap">
@@ -3582,6 +3627,10 @@ function renderTargetModal() {
   `;
 
   document.body.appendChild(overlay);
+  wireDialogKeyboard(overlay, () => {
+    closeTargetModal();
+    if (ui.view === 'match') renderMatchView();
+  });
 
   // Tap background to close
   overlay.addEventListener('click', () => {
@@ -3757,6 +3806,7 @@ function renderTargetModal() {
     closeTargetModal();
     if (ui.view === 'match') renderMatchView();
   };
+  document.getElementById('target-close-btn').focus();
 }
 
 // Partial updates without full rerender (keeps focus alive)
@@ -4502,8 +4552,8 @@ function openTeamModal(teamName) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>${isEdit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" onclick="event.stopPropagation();">
+      <h3 id="team-modal-title">${isEdit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}</h3>
       <label class="field-label">Type d'équipe</label>
       <select id="team-type-select" class="team-type-select">${optionsHtml}</select>
       <label class="field-label" id="team-archers-label"></label>
@@ -4522,6 +4572,7 @@ function openTeamModal(teamName) {
     </div>`;
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
   const select = overlay.querySelector('#team-type-select');
@@ -4591,8 +4642,8 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal">
-      <h3>${escapeHtml(title)}</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title">${escapeHtml(title)}</h3>
       <input type="text" id="modal-input" maxlength="${INPUT_LIMITS.label}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}">
       <div class="modal-actions">
         ${onDelete ? '<button class="btn danger" id="modal-delete">Supprimer</button>' : ''}
@@ -4607,6 +4658,7 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   input.select();
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
   overlay.querySelector('#modal-cancel').onclick = close;
   overlay.querySelector('#modal-ok').onclick = () => {
     const val = normalizeText(input.value, INPUT_LIMITS.label);
@@ -4661,9 +4713,15 @@ function render() {
   const globalView = document.getElementById('global-view');
   const panel = document.getElementById('matches-panel');
 
-  document.getElementById('view-match').classList.toggle('active', ui.view === 'match');
-  document.getElementById('view-grouping').classList.toggle('active', ui.view === 'grouping');
-  document.getElementById('view-global').classList.toggle('active', ui.view === 'global');
+  const viewMatchBtn = document.getElementById('view-match');
+  const viewGroupingBtn = document.getElementById('view-grouping');
+  const viewGlobalBtn = document.getElementById('view-global');
+  viewMatchBtn.classList.toggle('active', ui.view === 'match');
+  viewGroupingBtn.classList.toggle('active', ui.view === 'grouping');
+  viewGlobalBtn.classList.toggle('active', ui.view === 'global');
+  viewMatchBtn.setAttribute('aria-pressed', ui.view === 'match' ? 'true' : 'false');
+  viewGroupingBtn.setAttribute('aria-pressed', ui.view === 'grouping' ? 'true' : 'false');
+  viewGlobalBtn.setAttribute('aria-pressed', ui.view === 'global' ? 'true' : 'false');
 
   if (ui.view === 'global') {
     matchView.classList.add('hidden');
