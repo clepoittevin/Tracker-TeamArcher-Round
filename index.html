@@ -4153,7 +4153,7 @@ function renderGlobalView() {
       for (let i = 0; i < 4; i++) {
         const val = perArcherColors[i];
         if (val > 0) {
-          segsHtml += `<div class="seg seg-${i}" style="flex:${val}" title="${archers[i]}: ${val}"></div>`;
+          segsHtml += `<div class="seg seg-${i}" style="flex:${val}" title="${safeArcher(archers[i])}: ${val}"></div>`;
         }
       }
     }
