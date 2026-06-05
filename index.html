@@ -2275,6 +2275,7 @@ function applyChanges({ saveData = false, saveUi = false, rerender = true } = {}
 }
 
 function setView(viewName) {
+  if (ui.view === viewName) return;
   ui.view = viewName;
   applyChanges({ saveUi: true });
 }
@@ -2784,9 +2785,8 @@ function getArrowClass(a) {
   return 'filled-' + cat;
 }
 
-function buildMatchRowsHtml(match, archers, g, isPoulie, fullVolleyTip) {
+function buildMatchRowsHtml(match, archers, shortLabels, g, isPoulie, fullVolleyTip) {
   let rowsHtml = '';
-  const shortLabels = uniqueShortArcherNames(archers);
   let poulieRunning = 0;
   match.volees.forEach((v, vi) => {
     const total = volleyTotal(v);
@@ -2888,7 +2888,7 @@ function buildMatchArcherTotalsHtml(match) {
   return archerTotalsHtml;
 }
 
-function buildMatchHeaderHtml(match, matchIdx, res, totals, isPoulie, barrage) {
+function buildMatchHeaderHtml(match, matchIdx, activeDiscipline, activeTeam, activeComp, res, totals, isPoulie, barrage) {
   const resStatusClass = res.status;
   const resStatusText = {
     win: 'Victoire', loss: 'Défaite', tie: 'Égalité', pending: 'En cours'
@@ -2896,9 +2896,9 @@ function buildMatchHeaderHtml(match, matchIdx, res, totals, isPoulie, barrage) {
   return `
       <div class="match-header">
         <div class="match-meta">
-          <div class="match-number">${safeLabel(ui.activeDiscipline)} · ${safeLabel(ui.activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(ui.activeComp)}</div>
+          <div class="match-number">${safeLabel(activeDiscipline)} · ${safeLabel(activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(activeComp)}</div>
           <div class="match-title">
-            <span class="team-label">${safeLabel(ui.activeTeam)}</span>
+            <span class="team-label">${safeLabel(activeTeam)}</span>
             <span class="vs">vs.</span>
             <input class="opponent-input" id="opponent-input" maxlength="${INPUT_LIMITS.opponent}" value="${escapeHtml(match.opponent)}" placeholder="Adversaire">
             <button class="btn-icon" id="btn-delete-match" title="Supprimer ce match">✕</button>
@@ -2958,9 +2958,10 @@ function renderMatchView() {
   const res = matchResult(match);
   const totals = matchTotal(match);
   const barrage = matchBarrageScore(match);
-  const rowsHtml = buildMatchRowsHtml(match, archers, g, isPoulie, fullVolleyTip);
+  const shortLabels = uniqueShortArcherNames(archers);
+  const rowsHtml = buildMatchRowsHtml(match, archers, shortLabels, g, isPoulie, fullVolleyTip);
   const archerTotalsHtml = buildMatchArcherTotalsHtml(match);
-  const headerHtml = buildMatchHeaderHtml(match, matchIdx, res, totals, isPoulie, barrage);
+  const headerHtml = buildMatchHeaderHtml(match, matchIdx, ui.activeDiscipline, ui.activeTeam, ui.activeComp, res, totals, isPoulie, barrage);
   const statsCardsHtml = buildMatchStatsCardsHtml(match, archers);
 
   container.innerHTML = `
