@@ -1695,6 +1695,37 @@ function applyAppConfig() {
   if (sub) sub.textContent = APP_CONFIG.clubName;
 }
 
+const INPUT_LIMITS = {
+  label: 80,
+  opponent: 80,
+  archer: 40
+};
+
+function normalizeText(value, maxLen = INPUT_LIMITS.label) {
+  return String(value || '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeLabel(value) {
+  return escapeHtml(normalizeText(value, INPUT_LIMITS.label));
+}
+
+function safeArcher(value) {
+  return escapeHtml(normalizeText(value, INPUT_LIMITS.archer));
+}
+
 // ───────────────────────────────────────────────────────────
 // Data model & storage
 // ───────────────────────────────────────────────────────────
@@ -1742,7 +1773,7 @@ function emptyMatch(opponent) {
   volees[4].barrage = true;   // Volley 5 is always the shoot-off: 3 archers × 1 arrow
   return {
     id: 'm_' + Math.random().toString(36).slice(2, 10),
-    opponent: opponent || '',
+    opponent: normalizeText(opponent || '', INPUT_LIMITS.opponent),
     volees: volees
   };
 }
@@ -2301,6 +2332,7 @@ function migrateState() {
       }
     }
   }
+  sanitizeStateFields();
 }
 
 async function saveState() {
@@ -2579,9 +2611,8 @@ function renderTeamTabs() {
     if (!team) continue;
     const btn = document.createElement('button');
     btn.className = 'team-chip' + (name === ui.activeTeam ? ' active' : '');
-    const editIcon = (!READ_ONLY() && name === ui.activeTeam)
-      ? ` <span class="edit" title="Modifier l'équipe (nom & archers)">✎</span>` : '';
-    btn.innerHTML = `<span class="tn">${name}</span>${editIcon}`;
+    const showEdit = (!READ_ONLY() && name === ui.activeTeam);
+    btn.innerHTML = `<span class="tn">${safeLabel(name)}</span>${showEdit ? ' <span class="edit" title="Modifier l\'équipe (nom & archers)">✎</span>' : ''}`;
     btn.onclick = (e) => {
       if (e.target.classList.contains('edit')) { openEditTeamModal(name); return; }
       switchTeam(name);
@@ -2619,7 +2650,7 @@ function renderCompTabs() {
     if (!comp) continue;
     const btn = document.createElement('button');
     btn.className = 'comp-tab' + (name === ui.activeComp ? ' active' : '');
-    btn.innerHTML = `${name}<span class="count">${comp.matches.length}</span>`;
+    btn.innerHTML = `${safeLabel(name)}<span class="count">${comp.matches.length}</span>`;
     btn.onclick = () => {
       ui.activeComp = name;
       const firstMatch = comp.matches[0];
@@ -2657,9 +2688,10 @@ function renderMatchesList() {
     if (res.status === 'win') badge = `<span class="badge win">${res.our}-${res.their}</span>`;
     else if (res.status === 'loss') badge = `<span class="badge loss">${res.our}-${res.their}</span>`;
     else if (res.status === 'tie') badge = `<span class="badge tie">${res.our}-${res.their}</span>`;
+    const oppLabel = m.opponent ? safeLabel(m.opponent) : '<i>Sans nom</i>';
     btn.innerHTML = `
       <span class="num">${idx + 1}</span>
-      <span class="name">${m.opponent || '<i>Sans nom</i>'}</span>
+      <span class="name">${oppLabel}</span>
       ${badge}`;
     btn.onclick = () => {
       ui.activeMatchId = m.id;
@@ -2693,6 +2725,7 @@ function renderMatchView() {
 
   const comp = getComps()[ui.activeComp];
   const archers = getArchers();
+  const safeArchers = archers.map(safeArcher);
   const g = genderForTeam(getActiveTeam(), ui.activeTeam);
   const bow = bowForTeam(getActiveTeam(), ui.activeTeam);
   const isPoulie = bow === 'poulie';
@@ -2767,14 +2800,14 @@ function renderMatchView() {
     }
 
     const subIdx = subs.findIndex(s => s);
-    const subBadge = subIdx >= 0 ? `<span class="sub-badge" title="${nNonShooter(g, true)}">-${shortArcherName(archers[subIdx])}</span>` : '';
+    const subBadge = subIdx >= 0 ? `<span class="sub-badge" title="${nNonShooter(g, true)}">-${safeArcher(shortArcherName(archers[subIdx]))}</span>` : '';
     const barrageBadge = isBarrage ? `<span class="sub-badge barrage-badge" title="Barrage · 1 flèche par ${nArcher(g, false)}">BARRAGE</span>` : '';
     const popoverHtml = openPopoverV === vi ? `
       <div class="sub-popover" data-v="${vi}">
         <div class="popover-title">Qui ne tire pas cette volée ?</div>
         <div class="popover-chips">
           ${archers.map((n, a) => `
-            <button class="sub-chip${subs[a] ? ' active' : ''}" data-sub-v="${vi}" data-sub-a="${a}">${n}</button>
+            <button class="sub-chip${subs[a] ? ' active' : ''}" data-sub-v="${vi}" data-sub-a="${a}">${safeArcher(n)}</button>
           `).join('')}
           <button class="sub-chip clear${subIdx < 0 ? ' active' : ''}" data-sub-v="${vi}" data-sub-a="-1">${nAllShoot(g)}</button>
         </div>
@@ -2814,11 +2847,11 @@ function renderMatchView() {
     <div class="match-content">
       <div class="match-header">
         <div class="match-meta">
-          <div class="match-number">${ui.activeDiscipline} · ${ui.activeTeam} · Match ${matchIdx + 1} · ${ui.activeComp}</div>
+          <div class="match-number">${safeLabel(ui.activeDiscipline)} · ${safeLabel(ui.activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(ui.activeComp)}</div>
           <div class="match-title">
-            <span class="team-label">${ui.activeTeam}</span>
+            <span class="team-label">${safeLabel(ui.activeTeam)}</span>
             <span class="vs">vs.</span>
-            <input class="opponent-input" id="opponent-input" value="${match.opponent.replace(/"/g, '&quot;')}" placeholder="Adversaire">
+            <input class="opponent-input" id="opponent-input" maxlength="${INPUT_LIMITS.opponent}" value="${escapeHtml(match.opponent)}" placeholder="Adversaire">
             <button class="btn-icon" id="btn-delete-match" title="Supprimer ce match">✕</button>
           </div>
         </div>
@@ -2840,13 +2873,13 @@ function renderMatchView() {
           <thead>
             <tr>
               <th></th>
-              <th class="archer-th" colspan="2" data-archer="0">${archers[0] || ''}</th>
+              <th class="archer-th" colspan="2" data-archer="0">${safeArchers[0] || ''}</th>
               <th class="sep"></th>
-              <th class="archer-th" colspan="2" data-archer="1">${archers[1] || ''}</th>
+              <th class="archer-th" colspan="2" data-archer="1">${safeArchers[1] || ''}</th>
               <th class="sep"></th>
-              <th class="archer-th" colspan="2" data-archer="2">${archers[2] || ''}</th>
+              <th class="archer-th" colspan="2" data-archer="2">${safeArchers[2] || ''}</th>
               <th class="sep"></th>
-              <th class="archer-th" colspan="2" data-archer="3">${archers[3] || ''}</th>
+              <th class="archer-th" colspan="2" data-archer="3">${safeArchers[3] || ''}</th>
               <th>Total</th>
               <th>Adv.</th>
               <th>${isPoulie ? 'Cumul' : 'Set'}</th>
@@ -2875,7 +2908,7 @@ function renderMatchView() {
           const scoreCounts = countArcherScores(match, ai);
           return `
             <div class="archer-card">
-              <div class="name">${name}</div>
+              <div class="name">${safeArcher(name)}</div>
               <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
               <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
               <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
@@ -2976,7 +3009,8 @@ function attachScoresheetHandlers() {
       opInput.style.cursor = 'default';
     } else {
       opInput.addEventListener('input', (e) => {
-        match.opponent = e.target.value;
+        match.opponent = normalizeText(e.target.value, INPUT_LIMITS.opponent);
+        if (e.target.value !== match.opponent) e.target.value = match.opponent;
         renderMatchesList();
         debouncedSave();
       });
@@ -3407,8 +3441,8 @@ function renderTargetModal() {
     <div class="target-modal" onclick="event.stopPropagation();">
       <div class="target-modal-head">
         <div>
-          <div class="who"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${archerName}</div>
-          <div class="when">${subtitleText}</div>
+            <div class="who"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${safeArcher(archerName)}</div>
+            <div class="when">${escapeHtml(subtitleText)}</div>
         </div>
         <button class="target-close" id="target-close-btn" title="Fermer">✕</button>
       </div>
@@ -3718,12 +3752,35 @@ function updateArcherCard(ai) {
   const scoreCounts = countArcherScores(match, ai);
   const name = getArchers()[ai];
   card.innerHTML = `
-    <div class="name">${name}</div>
+    <div class="name">${safeArcher(name)}</div>
     <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
     <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
     <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
     <div class="stats-row"><span>X / 10 / 9</span><strong>${scoreCounts.x} · ${scoreCounts['10']} · ${scoreCounts['9']}</strong></div>
   `;
+}
+
+function sanitizeStateFields() {
+  if (!state || !state.disciplines) return;
+  for (const discName of Object.keys(state.disciplines)) {
+    const disc = state.disciplines[discName];
+    if (!disc || !disc.teams) continue;
+    for (const teamName of Object.keys(disc.teams)) {
+      const team = disc.teams[teamName];
+      if (!team) continue;
+      if (Array.isArray(team.archers)) {
+        team.archers = team.archers.map(n => normalizeText(n, INPUT_LIMITS.archer));
+      }
+      const competitions = team.competitions || {};
+      for (const compName of Object.keys(competitions)) {
+        const comp = competitions[compName];
+        if (!comp || !Array.isArray(comp.matches)) continue;
+        comp.matches.forEach((m) => {
+          m.opponent = normalizeText(m.opponent, INPUT_LIMITS.opponent);
+        });
+      }
+    }
+  }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -3870,7 +3927,7 @@ function renderGroupingView() {
     return `
       <div class="archer-target-card">
         <div class="head">
-          <div class="name">${name}</div>
+          <div class="name">${safeArcher(name)}</div>
           <div class="count">${s.arrowCount} flèche${s.arrowCount > 1 ? 's' : ''}</div>
         </div>
         <div class="target-box">
@@ -3914,10 +3971,10 @@ function renderGroupingView() {
       <label>Portée :</label>
       <select id="grouping-scope-select">
         <option value="current"${scope === 'current' ? ' selected' : ''}>Match en cours</option>
-        <option value="comp"${scope === 'comp' ? ' selected' : ''}>Compétition en cours (${ui.activeComp})</option>
+        <option value="comp"${scope === 'comp' ? ' selected' : ''}>Compétition en cours (${safeLabel(ui.activeComp)})</option>
         <option value="season"${scope === 'season' ? ' selected' : ''}>Toute la saison</option>
       </select>
-      <span class="grouping-scope-count">${scopeLabel}</span>
+      <span class="grouping-scope-count">${safeLabel(scopeLabel)}</span>
     </div>
 
     <div class="grouping-grid">
@@ -3948,6 +4005,7 @@ function renderGlobalView() {
 
   // Aggregate per archer: total, count, score distribution, color distribution
   const archers = getArchers();
+  const safeArchers = archers.map(safeArcher);
   const perArcher = archers.map((_, ai) => ({
     total: 0, count: 0,
     scores: { x: 0, '10': 0, '9': 0, '8': 0, '7': 0, '6': 0, '5': 0, '4': 0, '3': 0, '2': 0, '1': 0, m: 0 },
@@ -4071,7 +4129,7 @@ function renderGlobalView() {
           return `
             <div class="rank-card">
               <div class="rank-head">
-                <div class="name" style="font-size:0.95rem;">${cn}</div>
+                <div class="name" style="font-size:0.95rem;">${safeLabel(cn)}</div>
                 <div class="avg">${p}/${cms.length}</div>
               </div>
               <div class="rank-meta">
@@ -4090,7 +4148,7 @@ function renderGlobalView() {
         ${ranked.map(r => `
           <div class="rank-card">
             <div class="rank-head">
-              <div class="name">${r.name}</div>
+              <div class="name">${safeArcher(r.name)}</div>
               <div class="avg">${r.avg !== null ? r.avg.toFixed(2) : '—'}</div>
             </div>
             <div class="rank-bar">
@@ -4110,7 +4168,7 @@ function renderGlobalView() {
         <thead>
           <tr>
             <th>Valeur</th>
-            ${archers.map(n => `<th>${n}</th>`).join('')}
+            ${safeArchers.map(n => `<th>${n}</th>`).join('')}
             <th>Équipe</th>
           </tr>
         </thead>
@@ -4126,7 +4184,7 @@ function renderGlobalView() {
         ${colorBarsHtml}
       </div>
       <div style="font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.75rem; font-family: 'JetBrains Mono', monospace;">
-        ${archers.map((n, i) => `<span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px;height:10px;background:${SEG_COLORS[i % SEG_COLORS.length]};border-radius:2px;"></span>${n}</span>`).join(' &nbsp; ')}
+        ${safeArchers.map((n, i) => `<span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:10px;height:10px;background:${SEG_COLORS[i % SEG_COLORS.length]};border-radius:2px;"></span>${n}</span>`).join(' &nbsp; ')}
       </div>
     </div>
 
@@ -4245,7 +4303,7 @@ function openAddCompModal() {
   const team = getActiveTeam();
   if (!team) { alert('Crée d\'abord une équipe.'); return; }
   showModal('Nouvelle compétition', 'Nom', '', (name) => {
-    name = name.trim();
+    name = normalizeText(name, INPUT_LIMITS.label);
     if (!name) return;
     if (team.competitions[name]) { alert('Cette compétition existe déjà.'); return; }
     team.competitions[name] = { matches: [] };
@@ -4262,7 +4320,7 @@ function openRenameCompModal(oldName) {
   const team = getActiveTeam();
   if (!team) return;
   showModal('Renommer la compétition', 'Nom', oldName, (newName) => {
-    newName = newName.trim();
+    newName = normalizeText(newName, INPUT_LIMITS.label);
     if (!newName || newName === oldName) return;
     if (team.competitions[newName]) { alert('Ce nom est déjà pris.'); return; }
     team.competitions[newName] = team.competitions[oldName];
@@ -4292,7 +4350,7 @@ function openRenameCompModal(oldName) {
 // ─── Discipline & team management modals ────────────────────────
 function openAddDisciplineModal() {
   showModal('Nouvelle discipline', 'Nom (ex. Salle, Extérieur)', '', (name) => {
-    name = name.trim();
+    name = normalizeText(name, INPUT_LIMITS.label);
     if (!name) return;
     if (state.disciplines[name]) { alert('Cette discipline existe déjà.'); return; }
     // New discipline starts empty; the coach then picks team types from the list.
@@ -4312,7 +4370,7 @@ function openAddDisciplineModal() {
 
 function openRenameDisciplineModal(oldName) {
   showModal('Renommer la discipline', 'Nom', oldName, (newName) => {
-    newName = newName.trim();
+    newName = normalizeText(newName, INPUT_LIMITS.label);
     if (!newName || newName === oldName) return;
     if (state.disciplines[newName]) { alert('Ce nom est déjà pris.'); return; }
     state.disciplines[newName] = state.disciplines[oldName];
@@ -4347,7 +4405,7 @@ function openTeamModal(teamName) {
   if (!disc) { alert('Crée d\'abord une discipline.'); return; }
   const isEdit = !!(teamName && disc.teams[teamName]);
   const team = isEdit ? disc.teams[teamName] : null;
-  const esc = (s) => String(s).replace(/"/g, '&quot;');
+  const esc = (s) => escapeHtml(s);
 
   // Types already used by OTHER teams (no duplicates of the same type per discipline).
   const usedByOthers = new Set((disc.teamOrder || []).filter(n => n !== teamName));
@@ -4367,7 +4425,7 @@ function openTeamModal(teamName) {
   const optionsHtml = TEAM_TYPES.map(t => {
     const disabled = (t.name !== teamName) && usedByOthers.has(t.name);
     const sel = t.name === currentType ? ' selected' : '';
-    return `<option value="${esc(t.name)}"${sel}${disabled ? ' disabled' : ''}>${t.name}${disabled ? ' (déjà créée)' : ''}</option>`;
+    return `<option value="${esc(t.name)}"${sel}${disabled ? ' disabled' : ''}>${safeLabel(t.name)}${disabled ? ' (déjà créée)' : ''}</option>`;
   }).join('');
 
   const overlay = document.createElement('div');
@@ -4379,10 +4437,10 @@ function openTeamModal(teamName) {
       <select id="team-type-select" class="team-type-select">${optionsHtml}</select>
       <label class="field-label" id="team-archers-label"></label>
       <div class="archer-fields">
-        <input type="text" class="team-archer" data-i="0" value="${esc(a[0])}">
-        <input type="text" class="team-archer" data-i="1" value="${esc(a[1])}">
-        <input type="text" class="team-archer" data-i="2" value="${esc(a[2])}">
-        <input type="text" class="team-archer" data-i="3" value="${esc(a[3])}">
+        <input type="text" class="team-archer" data-i="0" maxlength="${INPUT_LIMITS.archer}" value="${esc(a[0])}">
+        <input type="text" class="team-archer" data-i="1" maxlength="${INPUT_LIMITS.archer}" value="${esc(a[1])}">
+        <input type="text" class="team-archer" data-i="2" maxlength="${INPUT_LIMITS.archer}" value="${esc(a[2])}">
+        <input type="text" class="team-archer" data-i="3" maxlength="${INPUT_LIMITS.archer}" value="${esc(a[3])}">
       </div>
       <div class="modal-actions">
         ${isEdit ? '<button class="btn danger" id="team-delete">Supprimer</button>' : ''}
@@ -4413,7 +4471,7 @@ function openTeamModal(teamName) {
     const tt = teamTypeByName(select.value);
     if (!tt) { alert('Choisis un type d\'équipe.'); return; }
     const newName = tt.name;
-    const newArchers = inputs.map(el => el.value.trim());
+    const newArchers = inputs.map(el => normalizeText(el.value, INPUT_LIMITS.archer));
     if (!isEdit) {
       if (disc.teams[newName]) { alert('Cette équipe existe déjà.'); return; }
       disc.teams[newName] = {
@@ -4468,7 +4526,7 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   overlay.innerHTML = `
     <div class="modal">
       <h3>${title}</h3>
-      <input type="text" id="modal-input" placeholder="${placeholder}" value="${defaultValue.replace(/"/g, '&quot;')}">
+      <input type="text" id="modal-input" maxlength="${INPUT_LIMITS.label}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}">
       <div class="modal-actions">
         ${onDelete ? '<button class="btn danger" id="modal-delete">Supprimer</button>' : ''}
         <div style="flex:1;"></div>
@@ -4484,7 +4542,7 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   const close = () => overlay.remove();
   overlay.querySelector('#modal-cancel').onclick = close;
   overlay.querySelector('#modal-ok').onclick = () => {
-    const val = input.value;
+    const val = normalizeText(input.value, INPUT_LIMITS.label);
     close();
     onConfirm(val);
   };
