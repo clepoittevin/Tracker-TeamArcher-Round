@@ -4525,7 +4525,7 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal">
-      <h3>${title}</h3>
+      <h3>${escapeHtml(title)}</h3>
       <input type="text" id="modal-input" maxlength="${INPUT_LIMITS.label}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}">
       <div class="modal-actions">
         ${onDelete ? '<button class="btn danger" id="modal-delete">Supprimer</button>' : ''}
