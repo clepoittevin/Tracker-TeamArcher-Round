@@ -1843,6 +1843,46 @@ function shortArcherName(name) {
   if (!n) return '—';
   return n.length <= 4 ? n : (n.slice(0, 3) + '.');
 }
+
+function uniqueShortArcherNames(names) {
+  const normalized = names.map((name) => normalizeText(name, INPUT_LIMITS.archer));
+  const labels = normalized.map(shortArcherName);
+  const groups = new Map();
+
+  labels.forEach((label, idx) => {
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(idx);
+  });
+
+  for (const indices of groups.values()) {
+    if (indices.length < 2) continue;
+    const collisionGroups = new Map();
+
+    for (const idx of indices) {
+      const raw = normalized[idx] || '';
+      let label = '—';
+      for (let keep = 3; keep <= 8; keep++) {
+        if (!raw) break;
+        if (raw.length <= keep + 1) label = raw;
+        else label = raw.slice(0, keep) + '.';
+        const alreadyUsed = labels.some((otherLabel, otherIdx) => otherIdx !== idx && otherLabel === label);
+        if (!alreadyUsed) break;
+      }
+      labels[idx] = label;
+      if (!collisionGroups.has(label)) collisionGroups.set(label, []);
+      collisionGroups.get(label).push(idx);
+    }
+
+    for (const sameLabelIndices of collisionGroups.values()) {
+      if (sameLabelIndices.length < 2) continue;
+      sameLabelIndices.forEach((idx, i) => {
+        labels[idx] = `${labels[idx]}#${i + 1}`;
+      });
+    }
+  }
+
+  return labels;
+}
 // ─── Gendered labels (archère/archer …) driven by the team's gender ──
 function genderForTeam(team, name) {
   if (team && (team.gender === 'F' || team.gender === 'M')) return team.gender;
@@ -2612,7 +2652,18 @@ function renderTeamTabs() {
     const btn = document.createElement('button');
     btn.className = 'team-chip' + (name === ui.activeTeam ? ' active' : '');
     const showEdit = (!READ_ONLY() && name === ui.activeTeam);
-    btn.innerHTML = `<span class="tn">${safeLabel(name)}</span>${showEdit ? ' <span class="edit" title="Modifier l\'équipe (nom & archers)">✎</span>' : ''}`;
+    const tn = document.createElement('span');
+    tn.className = 'tn';
+    tn.textContent = normalizeText(name, INPUT_LIMITS.label);
+    btn.appendChild(tn);
+    if (showEdit) {
+      btn.appendChild(document.createTextNode(' '));
+      const edit = document.createElement('span');
+      edit.className = 'edit';
+      edit.title = 'Modifier l\'équipe (nom & archers)';
+      edit.textContent = '✎';
+      btn.appendChild(edit);
+    }
     btn.onclick = (e) => {
       if (e.target.classList.contains('edit')) { openEditTeamModal(name); return; }
       switchTeam(name);
@@ -2650,7 +2701,11 @@ function renderCompTabs() {
     if (!comp) continue;
     const btn = document.createElement('button');
     btn.className = 'comp-tab' + (name === ui.activeComp ? ' active' : '');
-    btn.innerHTML = `${safeLabel(name)}<span class="count">${comp.matches.length}</span>`;
+    btn.textContent = normalizeText(name, INPUT_LIMITS.label);
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = String(comp.matches.length);
+    btn.appendChild(count);
     btn.onclick = () => {
       ui.activeComp = name;
       const firstMatch = comp.matches[0];
@@ -2684,15 +2739,28 @@ function renderMatchesList() {
     const btn = document.createElement('button');
     btn.className = 'match-item' + (m.id === ui.activeMatchId ? ' active' : '');
     const res = matchResult(m);
-    let badge = '';
-    if (res.status === 'win') badge = `<span class="badge win">${res.our}-${res.their}</span>`;
-    else if (res.status === 'loss') badge = `<span class="badge loss">${res.our}-${res.their}</span>`;
-    else if (res.status === 'tie') badge = `<span class="badge tie">${res.our}-${res.their}</span>`;
-    const oppLabel = m.opponent ? safeLabel(m.opponent) : '<i>Sans nom</i>';
-    btn.innerHTML = `
-      <span class="num">${idx + 1}</span>
-      <span class="name">${oppLabel}</span>
-      ${badge}`;
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = String(idx + 1);
+    btn.appendChild(num);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    if (m.opponent) {
+      name.textContent = normalizeText(m.opponent, INPUT_LIMITS.opponent);
+    } else {
+      const fallback = document.createElement('i');
+      fallback.textContent = 'Sans nom';
+      name.appendChild(fallback);
+    }
+    btn.appendChild(name);
+
+    if (res.status === 'win' || res.status === 'loss' || res.status === 'tie') {
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + res.status;
+      badge.textContent = `${res.our}-${res.their}`;
+      btn.appendChild(badge);
+    }
     btn.onclick = () => {
       ui.activeMatchId = m.id;
       ui.view = 'match';
@@ -2743,6 +2811,7 @@ function renderMatchView() {
 
   // Build scoresheet rows
   let rowsHtml = '';
+  const shortLabels = uniqueShortArcherNames(archers);
   match.volees.forEach((v, vi) => {
     const total = volleyTotal(v);
     const hasArrows = volleyArrowCount(v) > 0;
@@ -2800,7 +2869,7 @@ function renderMatchView() {
     }
 
     const subIdx = subs.findIndex(s => s);
-    const subBadge = subIdx >= 0 ? `<span class="sub-badge" title="${nNonShooter(g, true)}">-${safeArcher(shortArcherName(archers[subIdx]))}</span>` : '';
+    const subBadge = subIdx >= 0 ? `<span class="sub-badge" title="${nNonShooter(g, true)}">-${safeArcher(shortLabels[subIdx])}</span>` : '';
     const barrageBadge = isBarrage ? `<span class="sub-badge barrage-badge" title="Barrage · 1 flèche par ${nArcher(g, false)}">BARRAGE</span>` : '';
     const popoverHtml = openPopoverV === vi ? `
       <div class="sub-popover" data-v="${vi}">
