@@ -2268,6 +2268,17 @@ function saveUiPrefs() {
   } catch (e) {}
 }
 
+function applyChanges({ saveData = false, saveUi = false, rerender = true } = {}) {
+  if (rerender) render();
+  if (saveData) saveState();
+  if (saveUi) saveUiPrefs();
+}
+
+function setView(viewName) {
+  ui.view = viewName;
+  applyChanges({ saveUi: true });
+}
+
 // Make sure the ui points at a real comp/match. Called after state load
 // and after any remote update that could have deleted what we were looking at.
 function resolveActiveMatch() {
@@ -2635,8 +2646,7 @@ function switchDiscipline(name) {
   ui.activeTeam = (disc && disc.teamOrder && disc.teamOrder[0]) ||
                   (disc && Object.keys(disc.teams || {})[0]) || null;
   resolveActiveMatch();
-  render();
-  saveUiPrefs();
+  applyChanges({ saveUi: true });
 }
 
 // ─── Teams (second-level chips, scoped to active discipline) ────
@@ -2689,8 +2699,7 @@ function switchTeam(name) {
   ui.activeComp = (team && team.compOrder && team.compOrder[0]) ||
                   (team && Object.keys(team.competitions || {})[0]) || null;
   resolveActiveMatch();
-  render();
-  saveUiPrefs();
+  applyChanges({ saveUi: true });
 }
 
 function renderCompTabs() {
@@ -2710,8 +2719,7 @@ function renderCompTabs() {
       ui.activeComp = name;
       const firstMatch = comp.matches[0];
       ui.activeMatchId = firstMatch ? firstMatch.id : null;
-      render();
-      saveUiPrefs();
+      applyChanges({ saveUi: true });
     };
     if (!READ_ONLY()) {
       btn.oncontextmenu = (e) => {
@@ -2764,8 +2772,7 @@ function renderMatchesList() {
     btn.onclick = () => {
       ui.activeMatchId = m.id;
       ui.view = 'match';
-      render();
-      saveUiPrefs();
+      applyChanges({ saveUi: true });
     };
     container.appendChild(btn);
   });
@@ -3098,9 +3105,7 @@ function attachScoresheetHandlers() {
         const idx = comp.matches.findIndex(m => m.id === match.id);
         comp.matches.splice(idx, 1);
         ui.activeMatchId = comp.matches[idx] ? comp.matches[idx].id : (comp.matches[idx - 1] ? comp.matches[idx - 1].id : null);
-        render();
-        saveState();
-        saveUiPrefs();
+        applyChanges({ saveData: true, saveUi: true });
       };
     }
   }
@@ -4064,7 +4069,7 @@ function renderGroupingView() {
     select.onchange = (e) => {
       ui.groupingScope = e.target.value;
       renderGroupingView();
-      saveUiPrefs();
+      applyChanges({ rerender: false, saveUi: true });
     };
   }
 }
@@ -4344,9 +4349,7 @@ function importData(e) {
       if (loaded.competitions) { delete state.disciplines; delete state.disciplineOrder; }
       migrateState();
       resolveActiveMatch();
-      render();
-      saveState();
-      saveUiPrefs();
+      applyChanges({ saveData: true, saveUi: true });
       alert('Données importées !');
     } catch (err) {
       alert('Erreur : ' + err.message);
@@ -4360,9 +4363,7 @@ function resetData() {
   if (!confirm('Réinitialiser toutes les données ? ATTENTION : cela efface aussi les données des autres appareils connectés.')) return;
   state = defaultState();
   resolveActiveMatch();
-  render();
-  saveState();
-  saveUiPrefs();
+  applyChanges({ saveData: true, saveUi: true });
 }
 
 // ───────────────────────────────────────────────────────────
@@ -4379,9 +4380,7 @@ function openAddCompModal() {
     team.compOrder.push(name);
     ui.activeComp = name;
     ui.activeMatchId = null;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4396,9 +4395,7 @@ function openRenameCompModal(oldName) {
     delete team.competitions[oldName];
     team.compOrder = team.compOrder.map(n => n === oldName ? newName : n);
     if (ui.activeComp === oldName) ui.activeComp = newName;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   }, () => {
     // Delete option
     if (team.compOrder.length <= 1) { alert('Impossible de supprimer la dernière compétition.'); return; }
@@ -4410,9 +4407,7 @@ function openRenameCompModal(oldName) {
       ui.activeMatchId = team.competitions[ui.activeComp].matches[0]?.id || null;
     }
     closeModal();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4429,9 +4424,7 @@ function openAddDisciplineModal() {
     ui.activeTeam = null;
     ui.activeComp = null;
     ui.activeMatchId = null;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
     // Prompt to add the first team straight away.
     openAddTeamModal();
   });
@@ -4446,9 +4439,7 @@ function openRenameDisciplineModal(oldName) {
     delete state.disciplines[oldName];
     state.disciplineOrder = state.disciplineOrder.map(n => n === oldName ? newName : n);
     if (ui.activeDiscipline === oldName) ui.activeDiscipline = newName;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   }, () => {
     if (state.disciplineOrder.length <= 1) { alert('Impossible de supprimer la dernière discipline.'); return; }
     if (!confirm(`Supprimer la discipline "${oldName}", ses équipes et tous leurs matches ?`)) return;
@@ -4457,9 +4448,7 @@ function openRenameDisciplineModal(oldName) {
     if (ui.activeDiscipline === oldName) ui.activeDiscipline = state.disciplineOrder[0];
     resolveActiveMatch();
     closeModal();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4569,9 +4558,7 @@ function openTeamModal(teamName) {
       }
     }
     close();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   };
   if (isEdit) {
     overlay.querySelector('#team-delete').onclick = () => {
@@ -4582,9 +4569,7 @@ function openTeamModal(teamName) {
       if (ui.activeTeam === teamName) ui.activeTeam = disc.teamOrder[0];
       resolveActiveMatch();
       close();
-      render();
-      saveState();
-      saveUiPrefs();
+      applyChanges({ saveData: true, saveUi: true });
     };
   }
 }
@@ -4635,27 +4620,19 @@ document.getElementById('btn-add-match').onclick = () => {
     comp.matches.push(m);
     ui.activeMatchId = m.id;
     ui.view = 'match';
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 };
 
 // View toggle
 document.getElementById('view-match').onclick = () => {
-  ui.view = 'match';
-  render();
-  saveUiPrefs();
+  setView('match');
 };
 document.getElementById('view-grouping').onclick = () => {
-  ui.view = 'grouping';
-  render();
-  saveUiPrefs();
+  setView('grouping');
 };
 document.getElementById('view-global').onclick = () => {
-  ui.view = 'global';
-  render();
-  saveUiPrefs();
+  setView('global');
 };
 
 // ───────────────────────────────────────────────────────────
