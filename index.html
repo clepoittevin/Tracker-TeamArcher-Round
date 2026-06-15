@@ -1647,14 +1647,14 @@
       <h1>Feuille de match</h1>
     </div>
     <div class="view-toggle">
-      <button id="view-match" class="active">Match</button>
-      <button id="view-grouping">Groupement</button>
-      <button id="view-global">Statistiques</button>
+      <button id="view-match" class="active" aria-pressed="true">Match</button>
+      <button id="view-grouping" aria-pressed="false">Groupement</button>
+      <button id="view-global" aria-pressed="false">Statistiques</button>
     </div>
   </div>
-  <nav class="disc-tabs" id="disc-tabs"></nav>
-  <nav class="team-tabs" id="team-tabs"></nav>
-  <nav class="comp-tabs" id="comp-tabs"></nav>
+  <nav class="disc-tabs" id="disc-tabs" aria-label="Disciplines"></nav>
+  <nav class="team-tabs" id="team-tabs" aria-label="Équipes"></nav>
+  <nav class="comp-tabs" id="comp-tabs" aria-label="Compétitions"></nav>
 </header>
 
 <main>
@@ -1680,7 +1680,7 @@
 // ╚═══════════════════════════════════════════════════════════╝
 const APP_CONFIG = {
   // Nom affiché en haut de la page (sous-titre).
-  clubName: 'Nom de votre club · Saison 2026',
+  clubName: 'SSVA · Saison 2026',
   // Titre de l'onglet du navigateur.
   pageTitle: 'Suivi de match — Tir à l\'arc'
   // Le mot de passe coach n'est PLUS dans le code : la connexion se fait
@@ -1979,6 +1979,29 @@ function toggleCoachMode(e) {
   }
 }
 
+function wireDialogKeyboard(overlay, close) {
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusables = [...overlay.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter(el => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
+
 function showCoachUnlockModal() {
   // Guard: remove any pre-existing overlay
   document.querySelectorAll('.coach-modal-overlay').forEach(el => el.remove());
@@ -1986,8 +2009,8 @@ function showCoachUnlockModal() {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay coach-modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>Mode coach</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="coach-unlock-title" onclick="event.stopPropagation();">
+      <h3 id="coach-unlock-title">Mode coach</h3>
       <p style="font-size: 0.85rem; color: var(--ink-mute); margin-bottom: 0.75rem;">
         Connecte-toi avec ton compte coach pour activer la saisie.
       </p>
@@ -2007,6 +2030,7 @@ function showCoachUnlockModal() {
   emailInput.focus();
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
 
   const attempt = async () => {
     errorEl.textContent = '';
@@ -2051,8 +2075,8 @@ function showCoachLockModal() {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay coach-modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>Se déconnecter ?</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="coach-lock-title" onclick="event.stopPropagation();">
+      <h3 id="coach-lock-title">Se déconnecter ?</h3>
       <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 1rem;">
         La saisie sera désactivée et tu repasseras en mode spectateur. Tu pourras te
         reconnecter avec ton compte coach à tout moment.
@@ -2065,6 +2089,7 @@ function showCoachLockModal() {
   document.body.appendChild(overlay);
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
 
   overlay.querySelector('#coach-lock-cancel').onclick = close;
   overlay.querySelector('#coach-lock-ok').onclick = async () => {
@@ -2074,6 +2099,7 @@ function showCoachLockModal() {
     showToast('Mode spectateur activé');
   };
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.querySelector('#coach-lock-cancel').focus();
 }
 
 // ─── Firebase Firestore: shared live storage ───────────────────
@@ -2081,15 +2107,16 @@ function showCoachLockModal() {
 // it in real-time, so saving on one device updates the others within a second.
 // localStorage stays as a cache — last known state shown immediately at load,
 // then replaced by whatever Firestore pushes.
-const FIREBASE_CONFIG = {
-  apiKey: "VOTRE_API_KEY",
-  authDomain: "VOTRE_PROJET.firebaseapp.com",
-  projectId: "VOTRE_PROJET",
-  storageBucket: "VOTRE_PROJET.firebasestorage.app",
-  messagingSenderId: "VOTRE_SENDER_ID",
-  appId: "VOTRE_APP_ID"
+const firebaseConfig = {
+  apiKey: "AIzaSyCChLDFdY3vLV7cRAbDpBbRMnDGkwQt08g",
+  authDomain: "ssva-c82e3.firebaseapp.com",
+  projectId: "ssva-c82e3",
+  storageBucket: "ssva-c82e3.firebasestorage.app",
+  messagingSenderId: "516502585897",
+  appId: "1:516502585897:web:6ebf8ff8b0069426045238"
 };
-const TEAM_ID = 'equipe-principale';   // Nom du document partagé dans Firestore.
+
+const TEAM_ID = 'Equipe D1';   // Nom du document partagé dans Firestore.
                                        // Change-le pour faire tourner plusieurs
                                        // instances séparées sur le même projet.
 
@@ -2100,13 +2127,25 @@ let firestoreUnsubscribe = null;
 let isApplyingRemote = false;  // Guard to skip echo-save when we get our own write back
 let lastLocalPayload = null;   // Last JSON we wrote — used to compare incoming snapshots
 let firestoreReady = false;
+let lastRemoteSaveErrorAt = 0;
+
+function firebaseConfigIsPlaceholder() {
+  return Object.values(firebaseConfig).some(value => !value || /VOTRE_|YOUR_|\.\.\./.test(String(value)));
+}
 
 async function initFirebase() {
+  if (firebaseConfigIsPlaceholder()) {
+    console.info('Firebase config not set: running with local cache only.');
+    firestoreReady = false;
+    setConnectionStatus('local');
+    return;
+  }
+
   try {
     const appMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
     const fsMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js');
     const authMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
-    firebaseApp = appMod.initializeApp(FIREBASE_CONFIG);
+    firebaseApp = appMod.initializeApp(firebaseConfig);
     firestoreDb = fsMod.getFirestore(firebaseApp);
 
     // ─── Auth : suit l'état de connexion du coach ───
@@ -2144,9 +2183,9 @@ async function initFirebase() {
       const remotePayload = data.payload;
       // Ignore echoes of our own writes
       if (remotePayload === lastLocalPayload) return;
+      isApplyingRemote = true;
       try {
         const remoteState = JSON.parse(remotePayload);
-        isApplyingRemote = true;
         state = { ...defaultState(), ...remoteState };
         migrateState();
         // If the match we were viewing got deleted on another device, or the
@@ -2157,9 +2196,9 @@ async function initFirebase() {
         lastLocalPayload = remotePayload;
         // Re-render current view (but don't re-open target modal etc.)
         if (typeof render === 'function') render();
-        isApplyingRemote = false;
       } catch (e) {
         console.error('Bad remote payload:', e);
+      } finally {
         isApplyingRemote = false;
       }
     }, (err) => {
@@ -2266,6 +2305,18 @@ function saveUiPrefs() {
   try {
     localStorage.setItem(UI_KEY, JSON.stringify(ui));
   } catch (e) {}
+}
+
+function applyChanges({ saveData = false, saveUi = false, rerender = true } = {}) {
+  if (rerender) render();
+  if (saveData) saveState();
+  if (saveUi) saveUiPrefs();
+}
+
+function setView(viewName) {
+  if (ui.view === viewName) return;
+  ui.view = viewName;
+  applyChanges({ saveUi: true });
 }
 
 // Make sure the ui points at a real comp/match. Called after state load
@@ -2392,7 +2443,14 @@ async function saveState() {
 
   // Push to Firestore (the shared source of truth)
   if (firestoreReady) {
-    pushStateToFirestore();  // fire-and-forget
+    pushStateToFirestore().then((ok) => {
+      if (ok) return;
+      const now = Date.now();
+      if (now - lastRemoteSaveErrorAt > 10000) {
+        lastRemoteSaveErrorAt = now;
+        showToast('Sauvegarde distante impossible — données gardées en local');
+      }
+    });
   } else {
     setConnectionStatus('local');
   }
@@ -2635,8 +2693,7 @@ function switchDiscipline(name) {
   ui.activeTeam = (disc && disc.teamOrder && disc.teamOrder[0]) ||
                   (disc && Object.keys(disc.teams || {})[0]) || null;
   resolveActiveMatch();
-  render();
-  saveUiPrefs();
+  applyChanges({ saveUi: true });
 }
 
 // ─── Teams (second-level chips, scoped to active discipline) ────
@@ -2689,8 +2746,7 @@ function switchTeam(name) {
   ui.activeComp = (team && team.compOrder && team.compOrder[0]) ||
                   (team && Object.keys(team.competitions || {})[0]) || null;
   resolveActiveMatch();
-  render();
-  saveUiPrefs();
+  applyChanges({ saveUi: true });
 }
 
 function renderCompTabs() {
@@ -2710,8 +2766,7 @@ function renderCompTabs() {
       ui.activeComp = name;
       const firstMatch = comp.matches[0];
       ui.activeMatchId = firstMatch ? firstMatch.id : null;
-      render();
-      saveUiPrefs();
+      applyChanges({ saveUi: true });
     };
     if (!READ_ONLY()) {
       btn.oncontextmenu = (e) => {
@@ -2764,8 +2819,7 @@ function renderMatchesList() {
     btn.onclick = () => {
       ui.activeMatchId = m.id;
       ui.view = 'match';
-      render();
-      saveUiPrefs();
+      applyChanges({ saveUi: true });
     };
     container.appendChild(btn);
   });
@@ -2777,49 +2831,15 @@ function getArrowClass(a) {
   return 'filled-' + cat;
 }
 
-function renderMatchView() {
-  const container = document.getElementById('match-view');
-  const match = getActiveMatch();
-  if (!match) {
-    container.innerHTML = `
-      <div class="match-content">
-        <div class="empty-state">
-          <div class="display">Aucun match</div>
-          <div class="hint">Ajoute un match dans la colonne de gauche pour commencer.</div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const comp = getComps()[ui.activeComp];
-  const archers = getArchers();
-  const safeArchers = archers.map(safeArcher);
-  const g = genderForTeam(getActiveTeam(), ui.activeTeam);
-  const bow = bowForTeam(getActiveTeam(), ui.activeTeam);
-  const isPoulie = bow === 'poulie';
-  const fullVolleyTip = '3 ' + nArcher(g, true) + ' ont déjà tiré cette volée';
-  const matchIdx = comp.matches.findIndex(m => m.id === match.id);
-  const res = matchResult(match);
-  const totals = matchTotal(match);
-  const barrage = matchBarrageScore(match);
-  let poulieRunning = 0;   // running cumulative team score for the poulie format
-
-  let resStatusClass = res.status;
-  let resStatusText = {
-    win: 'Victoire', loss: 'Défaite', tie: 'Égalité', pending: 'En cours'
-  }[res.status];
-
-  // Build scoresheet rows
+function buildMatchRowsHtml(match, archers, shortLabels, g, isPoulie, fullVolleyTip) {
   let rowsHtml = '';
-  const shortLabels = uniqueShortArcherNames(archers);
+  let poulieRunning = 0;
   match.volees.forEach((v, vi) => {
     const total = volleyTotal(v);
     const hasArrows = volleyArrowCount(v) > 0;
     const advNum = v.adv === null || v.adv === '' ? null : Number(v.adv);
     let setCellHtml = '<span class="zero">—</span>';
     if (isPoulie) {
-      // Poulie : pas de sets. La colonne montre le cumul courant de l'équipe
-      // (barrage exclu du cumul, marqué « = » comme départage).
       if (v.barrage) {
         setCellHtml = hasArrows ? `<span class="setpt-pair"><span class="our tie-cell">=${total}</span></span>` : '<span class="zero">—</span>';
       } else {
@@ -2844,7 +2864,6 @@ function renderMatchView() {
       } else {
         const [a1, a2] = v.arrows[ai];
         const blockedCls = !archerCanShoot ? ' blocked' : '';
-        // First arrow — always editable (via target) unless archer is blocked
         cellsHtml += `
           <td class="arrow-cell">
             <input class="arrow-input ${getArrowClass(a1)}${blockedCls}" type="text" maxlength="2"
@@ -2852,7 +2871,6 @@ function renderMatchView() {
                    value="${a1 === null ? '' : a1}" readonly autocomplete="off"
                    title="${archerCanShoot ? 'Clique pour saisir avec la cible' : fullVolleyTip}">
           </td>`;
-        // Second arrow — disabled in barrage volleys
         if (isBarrage) {
           cellsHtml += `<td class="arrow-cell second sub-cell"><div class="sub-dash barrage-dash">—</div></td>`;
         } else {
@@ -2899,8 +2917,10 @@ function renderMatchView() {
         <td class="setpts">${setCellHtml}</td>
       </tr>`;
   });
+  return rowsHtml;
+}
 
-  // Archer totals row
+function buildMatchArcherTotalsHtml(match) {
   let archerTotalsHtml = '';
   for (let ai = 0; ai < 4; ai++) {
     const s = archerStats(match, ai);
@@ -2911,14 +2931,20 @@ function renderMatchView() {
       </td>`;
     if (ai < 3) archerTotalsHtml += '<td class="sep" style="border-top: 2px solid var(--ink);"></td>';
   }
+  return archerTotalsHtml;
+}
 
-  container.innerHTML = `
-    <div class="match-content">
+function buildMatchHeaderHtml(match, matchIdx, activeDiscipline, activeTeam, activeComp, res, totals, isPoulie, barrage) {
+  const resStatusClass = res.status;
+  const resStatusText = {
+    win: 'Victoire', loss: 'Défaite', tie: 'Égalité', pending: 'En cours'
+  }[res.status];
+  return `
       <div class="match-header">
         <div class="match-meta">
-          <div class="match-number">${safeLabel(ui.activeDiscipline)} · ${safeLabel(ui.activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(ui.activeComp)}</div>
+          <div class="match-number">${safeLabel(activeDiscipline)} · ${safeLabel(activeTeam)} · Match ${matchIdx + 1} · ${safeLabel(activeComp)}</div>
           <div class="match-title">
-            <span class="team-label">${safeLabel(ui.activeTeam)}</span>
+            <span class="team-label">${safeLabel(activeTeam)}</span>
             <span class="vs">vs.</span>
             <input class="opponent-input" id="opponent-input" maxlength="${INPUT_LIMITS.opponent}" value="${escapeHtml(match.opponent)}" placeholder="Adversaire">
             <button class="btn-icon" id="btn-delete-match" title="Supprimer ce match">✕</button>
@@ -2935,7 +2961,58 @@ function renderMatchView() {
             ? (hasArrowData(match) ? `<div style="font-family:'JetBrains Mono', monospace; font-size:0.72rem; color:var(--ink-mute); margin-top:0.4rem;">${res.our} · ${res.their} pts / 240${barrage.has ? ` · barrage ${barrage.our}·${barrage.their}` : ''}</div>` : '')
             : (hasArrowData(match) ? `<div style="font-family:'JetBrains Mono', monospace; font-size:0.72rem; color:var(--ink-mute); margin-top:0.4rem;">${totals.our} · ${totals.their} pts</div>` : '')}
         </div>
-      </div>
+      </div>`;
+}
+
+function buildMatchStatsCardsHtml(match, archers) {
+  return archers.map((name, ai) => {
+    const s = archerStats(match, ai);
+    const scoreCounts = countArcherScores(match, ai);
+    return `
+            <div class="archer-card">
+              <div class="name">${safeArcher(name)}</div>
+              <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
+              <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
+              <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
+              <div class="stats-row"><span>X / 10 / 9</span><strong>${scoreCounts.x} · ${scoreCounts['10']} · ${scoreCounts['9']}</strong></div>
+            </div>`;
+  }).join('');
+}
+
+function renderMatchView() {
+  const container = document.getElementById('match-view');
+  const match = getActiveMatch();
+  if (!match) {
+    container.innerHTML = `
+      <div class="match-content">
+        <div class="empty-state">
+          <div class="display">Aucun match</div>
+          <div class="hint">Ajoute un match dans la colonne de gauche pour commencer.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const comp = getComps()[ui.activeComp];
+  const archers = getArchers();
+  const safeArchers = archers.map(safeArcher);
+  const g = genderForTeam(getActiveTeam(), ui.activeTeam);
+  const bow = bowForTeam(getActiveTeam(), ui.activeTeam);
+  const isPoulie = bow === 'poulie';
+  const fullVolleyTip = '3 ' + nArcher(g, true) + ' ont déjà tiré cette volée';
+  const matchIdx = comp.matches.findIndex(m => m.id === match.id);
+  const res = matchResult(match);
+  const totals = matchTotal(match);
+  const barrage = matchBarrageScore(match);
+  const shortLabels = uniqueShortArcherNames(archers);
+  const rowsHtml = buildMatchRowsHtml(match, archers, shortLabels, g, isPoulie, fullVolleyTip);
+  const archerTotalsHtml = buildMatchArcherTotalsHtml(match);
+  const headerHtml = buildMatchHeaderHtml(match, matchIdx, ui.activeDiscipline, ui.activeTeam, ui.activeComp, res, totals, isPoulie, barrage);
+  const statsCardsHtml = buildMatchStatsCardsHtml(match, archers);
+
+  container.innerHTML = `
+    <div class="match-content">
+      ${headerHtml}
 
       <div class="scoresheet-wrap">
         <table class="scoresheet">
@@ -2972,18 +3049,7 @@ function renderMatchView() {
       </div>
 
       <div class="match-stats">
-        ${archers.map((name, ai) => {
-          const s = archerStats(match, ai);
-          const scoreCounts = countArcherScores(match, ai);
-          return `
-            <div class="archer-card">
-              <div class="name">${safeArcher(name)}</div>
-              <div class="stats-row"><span>Moyenne</span><strong>${s.avg !== null ? s.avg.toFixed(2) : '—'}</strong></div>
-              <div class="stats-row"><span>Total</span><strong>${s.total || '—'}</strong></div>
-              <div class="stats-row"><span>Flèches</span><strong>${s.count}</strong></div>
-              <div class="stats-row"><span>X / 10 / 9</span><strong>${scoreCounts.x} · ${scoreCounts['10']} · ${scoreCounts['9']}</strong></div>
-            </div>`;
-        }).join('')}
+        ${statsCardsHtml}
       </div>
     </div>
     <button class="fab-target" id="fab-target" title="Saisie tactile (cible)" aria-label="Ouvrir la cible tactile">
@@ -3098,9 +3164,7 @@ function attachScoresheetHandlers() {
         const idx = comp.matches.findIndex(m => m.id === match.id);
         comp.matches.splice(idx, 1);
         ui.activeMatchId = comp.matches[idx] ? comp.matches[idx].id : (comp.matches[idx - 1] ? comp.matches[idx - 1].id : null);
-        render();
-        saveState();
-        saveUiPrefs();
+        applyChanges({ saveData: true, saveUi: true });
       };
     }
   }
@@ -3507,13 +3571,13 @@ function renderTargetModal() {
   overlay.id = 'target-modal-overlay';
   overlay.className = 'target-modal-overlay';
   overlay.innerHTML = `
-    <div class="target-modal" onclick="event.stopPropagation();">
+    <div class="target-modal" role="dialog" aria-modal="true" aria-labelledby="target-modal-title" onclick="event.stopPropagation();">
       <div class="target-modal-head">
         <div>
-            <div class="who"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${safeArcher(archerName)}</div>
+            <div class="who" id="target-modal-title"><span class="who-dot" style="background:${SEG_COLORS[a % SEG_COLORS.length]};"></span>${safeArcher(archerName)}</div>
             <div class="when">${escapeHtml(subtitleText)}</div>
         </div>
-        <button class="target-close" id="target-close-btn" title="Fermer">✕</button>
+        <button class="target-close" id="target-close-btn" title="Fermer" aria-label="Fermer la cible tactile">✕</button>
       </div>
 
       <div class="target-wrap">
@@ -3564,6 +3628,10 @@ function renderTargetModal() {
   `;
 
   document.body.appendChild(overlay);
+  wireDialogKeyboard(overlay, () => {
+    closeTargetModal();
+    if (ui.view === 'match') renderMatchView();
+  });
 
   // Tap background to close
   overlay.addEventListener('click', () => {
@@ -3739,6 +3807,7 @@ function renderTargetModal() {
     closeTargetModal();
     if (ui.view === 'match') renderMatchView();
   };
+  document.getElementById('target-close-btn').focus();
 }
 
 // Partial updates without full rerender (keeps focus alive)
@@ -4064,7 +4133,7 @@ function renderGroupingView() {
     select.onchange = (e) => {
       ui.groupingScope = e.target.value;
       renderGroupingView();
-      saveUiPrefs();
+      applyChanges({ rerender: false, saveUi: true });
     };
   }
 }
@@ -4344,9 +4413,7 @@ function importData(e) {
       if (loaded.competitions) { delete state.disciplines; delete state.disciplineOrder; }
       migrateState();
       resolveActiveMatch();
-      render();
-      saveState();
-      saveUiPrefs();
+      applyChanges({ saveData: true, saveUi: true });
       alert('Données importées !');
     } catch (err) {
       alert('Erreur : ' + err.message);
@@ -4360,9 +4427,7 @@ function resetData() {
   if (!confirm('Réinitialiser toutes les données ? ATTENTION : cela efface aussi les données des autres appareils connectés.')) return;
   state = defaultState();
   resolveActiveMatch();
-  render();
-  saveState();
-  saveUiPrefs();
+  applyChanges({ saveData: true, saveUi: true });
 }
 
 // ───────────────────────────────────────────────────────────
@@ -4379,9 +4444,7 @@ function openAddCompModal() {
     team.compOrder.push(name);
     ui.activeComp = name;
     ui.activeMatchId = null;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4396,9 +4459,7 @@ function openRenameCompModal(oldName) {
     delete team.competitions[oldName];
     team.compOrder = team.compOrder.map(n => n === oldName ? newName : n);
     if (ui.activeComp === oldName) ui.activeComp = newName;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   }, () => {
     // Delete option
     if (team.compOrder.length <= 1) { alert('Impossible de supprimer la dernière compétition.'); return; }
@@ -4410,9 +4471,7 @@ function openRenameCompModal(oldName) {
       ui.activeMatchId = team.competitions[ui.activeComp].matches[0]?.id || null;
     }
     closeModal();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4429,9 +4488,7 @@ function openAddDisciplineModal() {
     ui.activeTeam = null;
     ui.activeComp = null;
     ui.activeMatchId = null;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
     // Prompt to add the first team straight away.
     openAddTeamModal();
   });
@@ -4446,9 +4503,7 @@ function openRenameDisciplineModal(oldName) {
     delete state.disciplines[oldName];
     state.disciplineOrder = state.disciplineOrder.map(n => n === oldName ? newName : n);
     if (ui.activeDiscipline === oldName) ui.activeDiscipline = newName;
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   }, () => {
     if (state.disciplineOrder.length <= 1) { alert('Impossible de supprimer la dernière discipline.'); return; }
     if (!confirm(`Supprimer la discipline "${oldName}", ses équipes et tous leurs matches ?`)) return;
@@ -4457,9 +4512,7 @@ function openRenameDisciplineModal(oldName) {
     if (ui.activeDiscipline === oldName) ui.activeDiscipline = state.disciplineOrder[0];
     resolveActiveMatch();
     closeModal();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 }
 
@@ -4500,8 +4553,8 @@ function openTeamModal(teamName) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal" onclick="event.stopPropagation();">
-      <h3>${isEdit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" onclick="event.stopPropagation();">
+      <h3 id="team-modal-title">${isEdit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}</h3>
       <label class="field-label">Type d'équipe</label>
       <select id="team-type-select" class="team-type-select">${optionsHtml}</select>
       <label class="field-label" id="team-archers-label"></label>
@@ -4520,6 +4573,7 @@ function openTeamModal(teamName) {
     </div>`;
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
 
   const select = overlay.querySelector('#team-type-select');
@@ -4569,9 +4623,7 @@ function openTeamModal(teamName) {
       }
     }
     close();
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   };
   if (isEdit) {
     overlay.querySelector('#team-delete').onclick = () => {
@@ -4582,9 +4634,7 @@ function openTeamModal(teamName) {
       if (ui.activeTeam === teamName) ui.activeTeam = disc.teamOrder[0];
       resolveActiveMatch();
       close();
-      render();
-      saveState();
-      saveUiPrefs();
+      applyChanges({ saveData: true, saveUi: true });
     };
   }
 }
@@ -4593,8 +4643,8 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal">
-      <h3>${escapeHtml(title)}</h3>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title">${escapeHtml(title)}</h3>
       <input type="text" id="modal-input" maxlength="${INPUT_LIMITS.label}" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}">
       <div class="modal-actions">
         ${onDelete ? '<button class="btn danger" id="modal-delete">Supprimer</button>' : ''}
@@ -4609,6 +4659,7 @@ function showModal(title, placeholder, defaultValue, onConfirm, onDelete) {
   input.select();
 
   const close = () => overlay.remove();
+  wireDialogKeyboard(overlay, close);
   overlay.querySelector('#modal-cancel').onclick = close;
   overlay.querySelector('#modal-ok').onclick = () => {
     const val = normalizeText(input.value, INPUT_LIMITS.label);
@@ -4635,27 +4686,19 @@ document.getElementById('btn-add-match').onclick = () => {
     comp.matches.push(m);
     ui.activeMatchId = m.id;
     ui.view = 'match';
-    render();
-    saveState();
-    saveUiPrefs();
+    applyChanges({ saveData: true, saveUi: true });
   });
 };
 
 // View toggle
 document.getElementById('view-match').onclick = () => {
-  ui.view = 'match';
-  render();
-  saveUiPrefs();
+  setView('match');
 };
 document.getElementById('view-grouping').onclick = () => {
-  ui.view = 'grouping';
-  render();
-  saveUiPrefs();
+  setView('grouping');
 };
 document.getElementById('view-global').onclick = () => {
-  ui.view = 'global';
-  render();
-  saveUiPrefs();
+  setView('global');
 };
 
 // ───────────────────────────────────────────────────────────
@@ -4671,9 +4714,15 @@ function render() {
   const globalView = document.getElementById('global-view');
   const panel = document.getElementById('matches-panel');
 
-  document.getElementById('view-match').classList.toggle('active', ui.view === 'match');
-  document.getElementById('view-grouping').classList.toggle('active', ui.view === 'grouping');
-  document.getElementById('view-global').classList.toggle('active', ui.view === 'global');
+  const viewMatchBtn = document.getElementById('view-match');
+  const viewGroupingBtn = document.getElementById('view-grouping');
+  const viewGlobalBtn = document.getElementById('view-global');
+  viewMatchBtn.classList.toggle('active', ui.view === 'match');
+  viewGroupingBtn.classList.toggle('active', ui.view === 'grouping');
+  viewGlobalBtn.classList.toggle('active', ui.view === 'global');
+  viewMatchBtn.setAttribute('aria-pressed', ui.view === 'match' ? 'true' : 'false');
+  viewGroupingBtn.setAttribute('aria-pressed', ui.view === 'grouping' ? 'true' : 'false');
+  viewGlobalBtn.setAttribute('aria-pressed', ui.view === 'global' ? 'true' : 'false');
 
   if (ui.view === 'global') {
     matchView.classList.add('hidden');
