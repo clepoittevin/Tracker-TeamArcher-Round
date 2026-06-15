@@ -1680,7 +1680,7 @@
 // ╚═══════════════════════════════════════════════════════════╝
 const APP_CONFIG = {
   // Nom affiché en haut de la page (sous-titre).
-  clubName: 'Nom de votre club · Saison 2026',
+  clubName: 'SSVA · Saison 2026',
   // Titre de l'onglet du navigateur.
   pageTitle: 'Suivi de match — Tir à l\'arc'
   // Le mot de passe coach n'est PLUS dans le code : la connexion se fait
@@ -2107,7 +2107,7 @@ function showCoachLockModal() {
 // it in real-time, so saving on one device updates the others within a second.
 // localStorage stays as a cache — last known state shown immediately at load,
 // then replaced by whatever Firestore pushes.
-const FIREBASE_CONFIG = {
+const firebaseConfig = {
   apiKey: "VOTRE_API_KEY",
   authDomain: "VOTRE_PROJET.firebaseapp.com",
   projectId: "VOTRE_PROJET",
@@ -2115,7 +2115,8 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "VOTRE_SENDER_ID",
   appId: "VOTRE_APP_ID"
 };
-const TEAM_ID = 'equipe-principale';   // Nom du document partagé dans Firestore.
+
+const TEAM_ID = 'Equipe D1';   // Nom du document partagé dans Firestore.
                                        // Change-le pour faire tourner plusieurs
                                        // instances séparées sur le même projet.
 
@@ -2129,7 +2130,7 @@ let firestoreReady = false;
 let lastRemoteSaveErrorAt = 0;
 
 function firebaseConfigIsPlaceholder() {
-  return Object.values(FIREBASE_CONFIG).some(value => !value || /VOTRE_|YOUR_|\.\.\./.test(String(value)));
+  return Object.values(firebaseConfig).some(value => !value || /VOTRE_|YOUR_|\.\.\./.test(String(value)));
 }
 
 async function initFirebase() {
@@ -2144,7 +2145,7 @@ async function initFirebase() {
     const appMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
     const fsMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js');
     const authMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
-    firebaseApp = appMod.initializeApp(FIREBASE_CONFIG);
+    firebaseApp = appMod.initializeApp(firebaseConfig);
     firestoreDb = fsMod.getFirestore(firebaseApp);
 
     // ─── Auth : suit l'état de connexion du coach ───
