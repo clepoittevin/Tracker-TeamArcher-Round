@@ -21,7 +21,9 @@ seconde).
 5. [Étape 4 — Héberger le site (Netlify)](#-étape-4--héberger-le-site-netlify)
 6. [Tester en local (optionnel)](#-tester-en-local-optionnel)
 7. [Plusieurs équipes sur la même base](#-plusieurs-équipes-sur-la-même-base)
-8. [Questions fréquentes](#-questions-fréquentes)
+8. [Sécurité — qui peut modifier les scores ?](#-sécurité--qui-peut-modifier-les-scores)
+9. [Checklist compétition](CHECKLIST_COMPETITION.md)
+10. [Questions fréquentes](#-questions-fréquentes)
 
 ---
 
@@ -31,8 +33,10 @@ seconde).
 - L'état complet du tournoi (matchs, scores, équipes…) est enregistré :
   - dans le **navigateur** (`localStorage`) → affichage immédiat, fonctionne même hors ligne ;
   - dans **Firebase Firestore** → partage en temps réel entre tous les appareils.
-- Dans Firestore, tout est stocké dans **un seul document** : la collection `teams`, document
-  `equipe-principale`, avec un champ `payload` (le tournoi complet au format JSON) et un champ `updatedAt`.
+- Dans Firestore, chaque équipe configurée utilise **son propre document** dans la collection `teams`,
+  avec un champ `payload` (le tournoi complet au format JSON, versionné par `schemaVersion`) et un
+  champ `updatedAt`. À chaque sauvegarde, l'app ajoute aussi `updatedBy` avec l'email du coach qui a
+  écrit la dernière version. Lors de la création d'une équipe, l'app ajoute `createdAt` et `createdBy`.
 
 Pour avoir votre propre version, vous devez :
 1. créer **votre** projet Firebase,
@@ -147,14 +151,25 @@ ressemble à ceci :
 
 **Remplacez ces six valeurs** par celles de **votre** projet (copiées à l'étape 2).
 
-Juste en dessous (vers la **ligne 1994**), il y a l'identifiant de l'équipe :
+Le choix des équipes se fait plus haut dans le bloc `APP_CONFIG`, via la liste `teams` :
 
 ```js
-const TEAM_ID = 'equipe-principale';
+teams: [
+  { id: 'equipe-d1', label: 'Équipe D1', description: 'Feuille principale', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique', description: 'Classique · Femme' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique', description: 'Classique · Homme' }
+]
 ```
 
-Vous pouvez le laisser tel quel, ou le renommer (par ex. `'mon-club'`). C'est le nom du document
-Firestore qui contiendra vos données.
+- **`id`** sert dans l'URL (`?team=equipe-d1`). Gardez-le stable, en minuscules, sans accents,
+  avec des tirets à la place des espaces.
+- **`label`** est le nom affiché dans le sélecteur. Vous pouvez le renommer librement.
+- **`description`** est optionnel : il ajoute une aide courte sous le nom de l'équipe.
+- **`docId`** est optionnel. Il sert uniquement si vous voulez pointer vers un document Firestore
+  existant dont le nom est différent de l'`id`.
+
+Quand une équipe est sélectionnée, l'application utilise le document Firestore `teams/<docId ou id>`.
+Si le document n'existe pas encore, un coach connecté peut l'initialiser automatiquement depuis l'app.
 
 ### 3.3 — Enregistrer
 
@@ -162,7 +177,8 @@ Firestore qui contiendra vos données.
 simplement le fichier).
 
 C'est tout côté configuration : l'application applique automatiquement votre nom de club et votre
-titre au chargement, et crée le document dans Firestore au premier lancement.
+titre au chargement. Le document Firestore de chaque équipe est créé automatiquement la première fois
+qu'un coach connecté ouvre cette équipe.
 
 ---
 
@@ -239,17 +255,55 @@ Puis ouvrez **http://localhost:8000** dans votre navigateur.
 
 ## 👥 Plusieurs équipes sur la même base
 
-Tout le tournoi tient dans **un seul document** Firestore (`teams/<TEAM_ID>`). Si vous voulez faire
-tourner **plusieurs instances séparées** depuis le même projet Firebase (par ex. deux clubs, ou
-équipe homme / équipe femme), il suffit de **dupliquer le fichier** et de donner un `TEAM_ID`
-différent à chacun :
+L'application peut gérer plusieurs équipes avec **un seul fichier `index.html`**. Il n'est plus
+nécessaire de dupliquer le fichier : les équipes sont listées dans `APP_CONFIG.teams`, puis choisies
+depuis l'écran d'accueil.
 
 ```js
-const TEAM_ID = 'club-A';   // dans la première copie
-const TEAM_ID = 'club-B';   // dans la seconde copie
+teams: [
+  { id: 'equipe-d1', label: 'Équipe D1', description: 'Feuille principale', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique', description: 'Classique · Femme' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique', description: 'Classique · Homme' }
+]
 ```
 
-Chaque `TEAM_ID` crée un document indépendant : les données ne se mélangent pas.
+Au démarrage, l'utilisateur arrive sur une page de choix :
+
+```txt
+Choisir une équipe
+[Équipe D1]
+[D1 Femme classique]
+[D1 Homme classique]
+```
+
+Chaque bouton ouvre automatiquement une URL du type :
+
+```txt
+https://votre-site.netlify.app/?team=d1-femme-classique
+```
+
+Vous pouvez partager ces liens directement ou générer des QR codes pour le terrain. Personne n'a
+besoin de saisir l'URL à la main. Le sélecteur affiche aussi un bouton **Copier le lien** pour chaque
+équipe.
+
+Chaque équipe utilise son propre document Firestore :
+
+```txt
+teams/Equipe D1        # car docId vaut "Equipe D1"
+teams/d1-femme-classique
+teams/d1-homme-classique
+```
+
+Si une équipe configurée n'existe pas encore dans Firestore, elle n'est pas créée par un spectateur.
+Un coach doit se connecter une première fois : l'application crée alors automatiquement le document
+avec une feuille vierge.
+
+Pour **ajouter** une équipe, ajoutez une ligne dans `APP_CONFIG.teams`. Pour **retirer** une équipe,
+retirez sa ligne : elle disparaît du sélecteur, mais ses données Firestore ne sont pas supprimées.
+Pour supprimer définitivement les données, supprimez aussi le document `teams/<docId ou id>` dans Firebase.
+
+Important : ne changez pas l'`id` d'une équipe existante sauf si vous voulez créer un nouveau document
+Firestore. Le `label`, lui, peut être modifié sans perdre les données.
 
 ---
 
@@ -263,8 +317,9 @@ L'application sépare deux rôles :
   **saisir** les scores.
 
 Cette séparation est garantie **côté serveur** par Firebase : même si quelqu'un trouve l'adresse du
-site et lit le code, il **ne peut pas écrire** dans la base sans être connecté avec un vrai compte
-coach. C'est une **vraie** protection (contrairement à un mot de passe écrit dans la page).
+site et lit le code, il **ne peut pas écrire** dans la base sans utiliser un email coach explicitement
+autorisé dans les règles Firestore. C'est une **vraie** protection (contrairement à un mot de passe
+écrit dans la page).
 
 Il y a **trois choses** à régler dans la console Firebase, une seule fois :
 
@@ -287,25 +342,39 @@ Il y a **trois choses** à régler dans la console Firebase, une seule fois :
 
 ### C. Verrouiller les règles Firestore
 
-Console Firebase → **Firestore Database → Règles** (*Rules*) → collez ceci → **Publier** :
+Console Firebase → **Firestore Database → Règles** (*Rules*) → collez ceci → remplacez les emails
+par vos comptes coach → **Publier** :
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /teams/{teamId} {
-      allow read: if true;                  // Lecture publique (spectateurs)
-      allow write: if request.auth != null; // Écriture réservée aux coachs connectés
+      allow read: if true; // Lecture publique (spectateurs)
+
+      allow write: if request.auth != null
+        && request.auth.token.email in [
+          'coach1@exemple.fr',
+          'coach2@exemple.fr'
+        ]
+        && request.resource.data.keys().hasOnly(['payload', 'updatedAt', 'updatedBy', 'createdAt', 'createdBy'])
+        && request.resource.data.keys().hasAll(['payload', 'updatedAt', 'updatedBy'])
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() < 900000
+        && request.resource.data.updatedBy == request.auth.token.email
+        && (!request.resource.data.keys().hasAny(['createdBy'])
+          || request.resource.data.createdBy == request.auth.token.email);
     }
   }
 }
 ```
 
-> ✅ Avec ces règles : **lecture pour tous**, **écriture seulement pour un compte connecté**. Un
-> visiteur (ou un robot) qui tombe sur l'URL ne pourra **pas** modifier vos scores.
+> ✅ Avec ces règles : **lecture pour tous**, **écriture seulement pour les emails coach listés**. Un
+> visiteur (ou un robot) qui tombe sur l'URL ne pourra **pas** modifier vos scores, même s'il tente de
+> créer son propre compte Firebase Auth.
 
-> 💡 Pour restreindre encore plus (n'autoriser QUE des comptes précis), remplacez la ligne d'écriture
-> par : `allow write: if request.auth != null && request.auth.token.email in ['coach1@exemple.fr', 'coach2@exemple.fr'];`
+> ⚠️ Évitez la règle plus large `allow write: if request.auth != null` : elle autorise tout compte
+> authentifié du projet, ce qui est trop permissif pour un site public.
 
 ---
 
@@ -333,14 +402,14 @@ code.
 
 **Un visiteur peut-il modifier mes scores en lisant le code source ?**
 Non. Le code ne contient aucun mot de passe, et les **règles Firestore** interdisent toute écriture
-sans être connecté avec un compte coach. Un visiteur reste en lecture seule.
+hors des emails coach explicitement autorisés. Un visiteur reste en lecture seule.
 
 **Mes données et celles du club original sont-elles mélangées ?**
 Non, à condition d'utiliser **votre propre projet Firebase**. Chaque projet a sa propre base, isolée.
 
 **Comment remettre les compteurs à zéro / supprimer un tournoi ?**
 Depuis l'application elle-même (interface de gestion des matchs), ou en supprimant le document
-`teams/<TEAM_ID>` dans la console Firestore.
+Firestore de l'équipe concernée, par exemple `teams/d1-femme-classique`, dans la console Firestore.
 
 **Comment saisir / modifier une flèche ?**
 Cliquez sur une case **vide** pour saisir une flèche avec la cible tactile. Sur mobile, une flèche
