@@ -147,14 +147,24 @@ ressemble à ceci :
 
 **Remplacez ces six valeurs** par celles de **votre** projet (copiées à l'étape 2).
 
-Juste en dessous (vers la **ligne 1994**), il y a l'identifiant de l'équipe :
+Le choix des équipes se fait plus haut dans le bloc `APP_CONFIG`, via la liste `teams` :
 
 ```js
-const TEAM_ID = 'equipe-principale';
+teams: [
+  { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique' }
+]
 ```
 
-Vous pouvez le laisser tel quel, ou le renommer (par ex. `'mon-club'`). C'est le nom du document
-Firestore qui contiendra vos données.
+- **`id`** sert dans l'URL (`?team=equipe-d1`). Gardez-le stable, en minuscules, sans accents,
+  avec des tirets à la place des espaces.
+- **`label`** est le nom affiché dans le sélecteur. Vous pouvez le renommer librement.
+- **`docId`** est optionnel. Il sert uniquement si vous voulez pointer vers un document Firestore
+  existant dont le nom est différent de l'`id`.
+
+Quand une équipe est sélectionnée, l'application utilise le document Firestore `teams/<docId ou id>`.
+Si le document n'existe pas encore, un coach connecté peut l'initialiser automatiquement depuis l'app.
 
 ### 3.3 — Enregistrer
 
@@ -239,17 +249,54 @@ Puis ouvrez **http://localhost:8000** dans votre navigateur.
 
 ## 👥 Plusieurs équipes sur la même base
 
-Tout le tournoi tient dans **un seul document** Firestore (`teams/<TEAM_ID>`). Si vous voulez faire
-tourner **plusieurs instances séparées** depuis le même projet Firebase (par ex. deux clubs, ou
-équipe homme / équipe femme), il suffit de **dupliquer le fichier** et de donner un `TEAM_ID`
-différent à chacun :
+L'application peut gérer plusieurs équipes avec **un seul fichier `index.html`**. Il n'est plus
+nécessaire de dupliquer le fichier : les équipes sont listées dans `APP_CONFIG.teams`, puis choisies
+depuis l'écran d'accueil.
 
 ```js
-const TEAM_ID = 'club-A';   // dans la première copie
-const TEAM_ID = 'club-B';   // dans la seconde copie
+teams: [
+  { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique' }
+]
 ```
 
-Chaque `TEAM_ID` crée un document indépendant : les données ne se mélangent pas.
+Au démarrage, l'utilisateur arrive sur une page de choix :
+
+```txt
+Choisir une équipe
+[Équipe D1]
+[D1 Femme classique]
+[D1 Homme classique]
+```
+
+Chaque bouton ouvre automatiquement une URL du type :
+
+```txt
+https://votre-site.netlify.app/?team=d1-femme-classique
+```
+
+Vous pouvez partager ces liens directement ou générer des QR codes pour le terrain. Personne n'a
+besoin de saisir l'URL à la main.
+
+Chaque équipe utilise son propre document Firestore :
+
+```txt
+teams/Equipe D1        # car docId vaut "Equipe D1"
+teams/d1-femme-classique
+teams/d1-homme-classique
+```
+
+Si une équipe configurée n'existe pas encore dans Firestore, elle n'est pas créée par un spectateur.
+Un coach doit se connecter une première fois : l'application crée alors automatiquement le document
+avec une feuille vierge.
+
+Pour **ajouter** une équipe, ajoutez une ligne dans `APP_CONFIG.teams`. Pour **retirer** une équipe,
+retirez sa ligne : elle disparaît du sélecteur, mais ses données Firestore ne sont pas supprimées.
+Pour supprimer définitivement les données, supprimez aussi le document `teams/<id>` dans Firebase.
+
+Important : ne changez pas l'`id` d'une équipe existante sauf si vous voulez créer un nouveau document
+Firestore. Le `label`, lui, peut être modifié sans perdre les données.
 
 ---
 
@@ -340,7 +387,7 @@ Non, à condition d'utiliser **votre propre projet Firebase**. Chaque projet a s
 
 **Comment remettre les compteurs à zéro / supprimer un tournoi ?**
 Depuis l'application elle-même (interface de gestion des matchs), ou en supprimant le document
-`teams/<TEAM_ID>` dans la console Firestore.
+Firestore de l'équipe concernée, par exemple `teams/d1-femme-classique`, dans la console Firestore.
 
 **Comment saisir / modifier une flèche ?**
 Cliquez sur une case **vide** pour saisir une flèche avec la cible tactile. Sur mobile, une flèche

@@ -288,6 +288,87 @@
   @media (max-width: 900px) {
     main { grid-template-columns: 1fr; gap: 1rem; padding: 1rem; }
   }
+  .team-gate {
+    grid-column: 1 / -1;
+  }
+  .team-selector-card {
+    max-width: 780px;
+    margin: 2rem auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 2rem;
+  }
+  .team-selector-card h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.8rem;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    margin-bottom: 0.4rem;
+  }
+  .team-selector-card p {
+    color: var(--ink-soft);
+    margin-bottom: 1.2rem;
+  }
+  .team-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.75rem;
+  }
+  .team-select-card {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+  }
+  .team-select-card:hover {
+    border-color: var(--gold);
+    transform: translateY(-1px);
+  }
+  .team-select-card .name {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .team-select-card .id {
+    display: block;
+    color: var(--ink-mute);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+  }
+  .team-gate-message {
+    text-align: center;
+    max-width: 620px;
+    margin: 2rem auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 2rem;
+  }
+  .team-gate-message h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.6rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  .team-gate-message p {
+    color: var(--ink-soft);
+    margin-bottom: 1rem;
+  }
+  .team-selector-warning {
+    border: 1px solid var(--loss);
+    background: rgba(224, 100, 100, 0.12);
+    color: var(--loss);
+    border-radius: 6px;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
 
   /* ───── Matches list ───── */
   aside.matches-panel {
@@ -1589,6 +1670,7 @@
   .conn-status.offline { background: rgba(109, 118, 137, 0.2); color: var(--ink-mute); }
   .conn-status.error { background: rgba(224, 100, 100, 0.15); color: var(--loss); }
   .conn-status.local { background: rgba(109, 118, 137, 0.2); color: var(--ink-mute); }
+  .conn-status.pending { background: rgba(216, 162, 82, 0.15); color: var(--tie); }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
@@ -1620,6 +1702,32 @@
   .mode-toggle.coach:hover {
     background: rgba(92, 180, 120, 0.22);
   }
+  .active-team-label {
+    color: var(--ink-soft);
+  }
+  .team-switch {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-mute);
+    cursor: pointer;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-family: inherit;
+    margin-left: 6px;
+    vertical-align: 0.05em;
+    transition: all 0.12s;
+  }
+  .team-switch:hover {
+    border-color: var(--ink-soft);
+    color: var(--ink-soft);
+  }
+  body.no-team .view-toggle,
+  body.no-team header nav,
+  body.no-team .mode-toggle,
+  body.no-team .conn-status,
+  body.team-uninitialized .view-toggle,
+  body.team-uninitialized header nav { display: none !important; }
 
   /* Helper / hint keys */
   .input-hint {
@@ -1643,7 +1751,7 @@
 <header class="app-header">
   <div class="brand">
     <div>
-      <div class="subtitle"><span id="app-subtitle">Nom de votre club · Saison 2026</span> · <span class="conn-status connecting" id="conn-status">Connexion…</span><button class="mode-toggle" id="mode-toggle" title="Changer de mode">🔒 Spectateur</button></div>
+      <div class="subtitle"><span id="app-subtitle">Nom de votre club · Saison 2026</span><span class="active-team-label hidden" id="active-team-label"></span> · <span class="conn-status connecting" id="conn-status">Connexion…</span><button class="mode-toggle" id="mode-toggle" title="Changer de mode">🔒 Spectateur</button><button class="team-switch hidden" id="team-switch" title="Choisir une autre équipe">Changer d'équipe</button></div>
       <h1>Feuille de match</h1>
     </div>
     <div class="view-toggle">
@@ -1658,6 +1766,8 @@
 </header>
 
 <main>
+  <section id="team-gate" class="team-gate hidden"></section>
+
   <aside class="matches-panel" id="matches-panel">
     <div class="panel-label">Matches</div>
     <div class="matches-list" id="matches-list"></div>
@@ -1682,7 +1792,13 @@ const APP_CONFIG = {
   // Nom affiché en haut de la page (sous-titre).
   clubName: 'SSVA · Saison 2026',
   // Titre de l'onglet du navigateur.
-  pageTitle: 'Suivi de match — Tir à l\'arc'
+  pageTitle: 'Suivi de match — Tir à l\'arc',
+  // Équipes proposées au démarrage. L'id sert dans l'URL (?team=equipe-d1)
+  // et doit rester stable. Le docId est optionnel : il permet de conserver
+  // un document Firestore existant dont le nom n'est pas URL-friendly.
+  teams: [
+    { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' }
+  ]
   // Le mot de passe coach n'est PLUS dans le code : la connexion se fait
   // via Firebase Authentication (comptes créés dans la console Firebase).
   // Voir la section « Sécurité » du README.
@@ -1693,6 +1809,62 @@ function applyAppConfig() {
   try { document.title = APP_CONFIG.pageTitle; } catch (e) {}
   const sub = document.getElementById('app-subtitle');
   if (sub) sub.textContent = APP_CONFIG.clubName;
+}
+
+const TEAM_PARAM = 'team';
+const TEAM_ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
+let activeTeamConfig = null;
+let TEAM_ID = null;
+let teamSelectionError = '';
+
+function validConfiguredTeams() {
+  return (APP_CONFIG.teams || []).filter(team => {
+    const id = String(team && team.id || '');
+    const docId = String(team && (team.docId || team.id) || '');
+    return TEAM_ID_RE.test(id) && docId && !docId.includes('/');
+  });
+}
+
+function requestedTeamId() {
+  try {
+    return new URLSearchParams(window.location.search).get(TEAM_PARAM) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function configureActiveTeamFromUrl() {
+  const requested = requestedTeamId().trim();
+  const teams = validConfiguredTeams();
+  activeTeamConfig = null;
+  TEAM_ID = null;
+  teamSelectionError = '';
+
+  if (!requested) return false;
+  const team = teams.find(t => t.id === requested);
+  if (!team) {
+    teamSelectionError = 'Équipe inconnue. Choisissez une équipe dans la liste.';
+    return false;
+  }
+
+  activeTeamConfig = team;
+  TEAM_ID = String(team.docId || team.id);
+  applyTeamStorageKeys();
+  return true;
+}
+
+function teamUrl(teamId) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(TEAM_PARAM, teamId);
+  url.hash = '';
+  return url.pathname + url.search;
+}
+
+function teamSelectorUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(TEAM_PARAM);
+  url.hash = '';
+  return url.pathname + url.search;
 }
 
 const INPUT_LIMITS = {
@@ -1750,7 +1922,13 @@ const TEAM_TYPES = [
   { name: 'Homme poulie',    gender: 'M', bow: 'poulie' }
 ];
 function teamTypeByName(n) { return TEAM_TYPES.find(t => t.name === n) || null; }
-const STORAGE_KEY = 'd1_2026_data';
+let STORAGE_KEY = 'd1_2026_data';
+
+function applyTeamStorageKeys() {
+  const cacheId = activeTeamConfig ? activeTeamConfig.id : 'default';
+  STORAGE_KEY = `d1_2026_data_${cacheId}`;
+  UI_KEY = `d1_2026_ui_${cacheId}`;
+}
 
 // Compétitions/rencontres par défaut pour amorcer une base vide.
 // Laissé VIDE volontairement : un nouveau club démarre sur une page blanche
@@ -1913,7 +2091,7 @@ function nAllShoot(gender) { return gender === 'M' ? 'Tous tirent' : 'Toutes tir
 
 // UI preferences — LOCAL to each device, never synced.
 // This keeps the "which view / which match" choice independent per user.
-const UI_KEY = 'd1_2026_ui';
+let UI_KEY = 'd1_2026_ui';
 function defaultUi() {
   return {
     activeDiscipline: 'Extérieur',
@@ -2116,10 +2294,6 @@ const firebaseConfig = {
   appId: "1:516502585897:web:6ebf8ff8b0069426045238"
 };
 
-const TEAM_ID = 'Equipe D1';   // Nom du document partagé dans Firestore.
-                                       // Change-le pour faire tourner plusieurs
-                                       // instances séparées sur le même projet.
-
 let firebaseApp = null;
 let firestoreDb = null;
 let teamDocRef = null;
@@ -2128,18 +2302,72 @@ let isApplyingRemote = false;  // Guard to skip echo-save when we get our own wr
 let lastLocalPayload = null;   // Last JSON we wrote — used to compare incoming snapshots
 let firestoreReady = false;
 let lastRemoteSaveErrorAt = 0;
+let teamDocumentStatus = 'ready'; // ready, checking, missing, creating
+let teamCreationInProgress = false;
 
 function firebaseConfigIsPlaceholder() {
   return Object.values(firebaseConfig).some(value => !value || /VOTRE_|YOUR_|\.\.\./.test(String(value)));
 }
 
+function resetStateForNewTeam() {
+  state = defaultState();
+  ui = defaultUi();
+  migrateState();
+  resolveActiveMatch();
+}
+
+async function createMissingTeamDocument() {
+  if (!firestoreReady || !teamDocRef || !window._fsSetDoc || teamCreationInProgress) return false;
+  if (!firebaseAuth || !firebaseAuth.currentUser) {
+    teamDocumentStatus = 'missing';
+    if (typeof render === 'function') render();
+    return false;
+  }
+
+  teamCreationInProgress = true;
+  teamDocumentStatus = 'creating';
+  setConnectionStatus('pending');
+  if (typeof render === 'function') render();
+
+  resetStateForNewTeam();
+  const payload = JSON.stringify(state);
+  lastLocalPayload = payload;
+
+  try {
+    await window._fsSetDoc(teamDocRef, {
+      payload: payload,
+      updatedAt: window._fsServerTimestamp()
+    });
+    try { localStorage.setItem(STORAGE_KEY, payload); } catch (e) {}
+    teamDocumentStatus = 'ready';
+    setConnectionStatus('online');
+    showToast('Équipe créée — saisie disponible');
+    if (typeof render === 'function') render();
+    return true;
+  } catch (e) {
+    console.error('Team creation failed:', e);
+    teamDocumentStatus = 'missing';
+    setConnectionStatus('error');
+    showToast('Création impossible : vérifie les droits Firebase du compte coach');
+    if (typeof render === 'function') render();
+    return false;
+  } finally {
+    teamCreationInProgress = false;
+  }
+}
+
 async function initFirebase() {
+  if (!activeTeamConfig) return;
   if (firebaseConfigIsPlaceholder()) {
     console.info('Firebase config not set: running with local cache only.');
     firestoreReady = false;
+    teamDocumentStatus = 'ready';
     setConnectionStatus('local');
     return;
   }
+
+  teamDocumentStatus = 'checking';
+  setConnectionStatus('connecting');
 
   try {
     const appMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js');
@@ -2147,6 +2375,10 @@ async function initFirebase() {
     const authMod = await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
     firebaseApp = appMod.initializeApp(firebaseConfig);
     firestoreDb = fsMod.getFirestore(firebaseApp);
+    teamDocRef = fsMod.doc(firestoreDb, 'teams', TEAM_ID);
+    firestoreReady = true;
+    window._fsSetDoc = fsMod.setDoc;
+    window._fsServerTimestamp = fsMod.serverTimestamp;
 
     // ─── Auth : suit l'état de connexion du coach ───
     firebaseAuth = authMod.getAuth(firebaseApp);
@@ -2155,10 +2387,14 @@ async function initFirebase() {
     window._authSignOut = () => authMod.signOut(firebaseAuth);
     // À chaque changement (connexion, déconnexion, ou session restaurée au
     // rechargement), on met à jour le mode coach/spectateur et on rafraîchit.
-    authMod.onAuthStateChanged(firebaseAuth, (user) => {
+    authMod.onAuthStateChanged(firebaseAuth, async (user) => {
       currentUser = user;
       isCoach = !!user;
       applyCoachMode();
+      if (isCoach && teamDocumentStatus === 'missing') {
+        await createMissingTeamDocument();
+        return;
+      }
       if (typeof render === 'function') render();
     });
     // Enable offline persistence — the SDK queues writes when network is down
@@ -2170,16 +2406,35 @@ async function initFirebase() {
       // Not fatal — online sync still works.
       console.warn('Firestore offline persistence unavailable:', persistErr.code);
     }
-    teamDocRef = fsMod.doc(firestoreDb, 'teams', TEAM_ID);
-    firestoreReady = true;
-    setConnectionStatus('connecting');
-
     // Live listener
     firestoreUnsubscribe = fsMod.onSnapshot(teamDocRef, (snap) => {
       setConnectionStatus(snap.metadata.fromCache ? 'offline' : 'online');
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        if (snap.metadata.fromCache) {
+          if (typeof render === 'function') render();
+          return;
+        }
+        teamDocumentStatus = 'missing';
+        resetStateForNewTeam();
+        lastLocalPayload = null;
+        if (firebaseAuth && firebaseAuth.currentUser) {
+          createMissingTeamDocument();
+        } else if (typeof render === 'function') {
+          render();
+        }
+        return;
+      }
       const data = snap.data();
-      if (!data || !data.payload) return;
+      if (!data || !data.payload) {
+        teamDocumentStatus = 'missing';
+        if (firebaseAuth && firebaseAuth.currentUser) {
+          createMissingTeamDocument();
+        } else if (typeof render === 'function') {
+          render();
+        }
+        return;
+      }
+      teamDocumentStatus = 'ready';
       const remotePayload = data.payload;
       // Ignore echoes of our own writes
       if (remotePayload === lastLocalPayload) return;
@@ -2206,27 +2461,28 @@ async function initFirebase() {
       setConnectionStatus('error');
     });
 
-    // Also push current local state to Firestore the first time we connect,
-    // if Firestore has nothing yet and we have local data to seed.
-    // Une écriture n'est autorisée que pour un coach connecté (règles Firestore) ;
-    // sinon le document sera créé à la première saisie d'un coach.
-    const initialSnap = await fsMod.getDoc(teamDocRef);
-    if (!initialSnap.exists() && firebaseAuth && firebaseAuth.currentUser) {
-      await pushStateToFirestore();
+    // Vérifie explicitement l'existence du document : si l'équipe n'a pas encore
+    // été initialisée, seul un coach connecté pourra la créer automatiquement.
+    const initialSnap = await fsMod.getDocFromServer(teamDocRef);
+    if (!initialSnap.exists()) {
+      teamDocumentStatus = 'missing';
+      if (firebaseAuth && firebaseAuth.currentUser) {
+        await createMissingTeamDocument();
+      } else if (typeof render === 'function') {
+        render();
+      }
     }
-
-    // Keep a reference to setDoc for saveState
-    window._fsSetDoc = fsMod.setDoc;
-    window._fsServerTimestamp = fsMod.serverTimestamp;
   } catch (e) {
     console.error('Firebase init failed:', e);
     setConnectionStatus('error');
+    teamDocumentStatus = 'ready';
     firestoreReady = false;
+    if (typeof render === 'function') render();
   }
 }
 
 async function pushStateToFirestore() {
-  if (!firestoreReady || !teamDocRef || !window._fsSetDoc) return false;
+  if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !window._fsSetDoc) return false;
   const payload = JSON.stringify(state);
   lastLocalPayload = payload;
   try {
@@ -2250,7 +2506,8 @@ function setConnectionStatus(status) {
     online: 'En ligne',
     offline: 'Hors ligne',
     error: 'Erreur',
-    local: 'Local'
+    local: 'Local',
+    pending: 'À initialiser'
   };
   el.textContent = labels[status] || status;
 }
@@ -2302,6 +2559,7 @@ function loadUiPrefs() {
 }
 
 function saveUiPrefs() {
+  if (!activeTeamConfig) return;
   try {
     localStorage.setItem(UI_KEY, JSON.stringify(ui));
   } catch (e) {}
@@ -2428,6 +2686,7 @@ function migrateState() {
 
 async function saveState() {
   if (READ_ONLY()) return;        // Spectateur: n'écrit nulle part
+  if (!activeTeamConfig || teamDocumentStatus !== 'ready') return;
   if (isApplyingRemote) return;   // Don't echo-save changes that came from Firestore
 
   const payload = JSON.stringify(state);
@@ -4704,7 +4963,165 @@ document.getElementById('view-global').onclick = () => {
 // ───────────────────────────────────────────────────────────
 // Main render dispatcher
 // ───────────────────────────────────────────────────────────
+function updateTeamChrome() {
+  document.body.classList.toggle('no-team', !activeTeamConfig);
+  document.body.classList.toggle('team-uninitialized', !!activeTeamConfig && teamDocumentStatus !== 'ready');
+
+  const activeLabel = document.getElementById('active-team-label');
+  if (activeLabel) {
+    if (activeTeamConfig) {
+      activeLabel.textContent = ` · ${activeTeamConfig.label}`;
+      activeLabel.classList.remove('hidden');
+    } else {
+      activeLabel.textContent = '';
+      activeLabel.classList.add('hidden');
+    }
+  }
+
+  const switchBtn = document.getElementById('team-switch');
+  if (switchBtn) switchBtn.classList.toggle('hidden', !activeTeamConfig);
+}
+
+function hideAppContentForGate() {
+  document.getElementById('team-gate').classList.remove('hidden');
+  document.getElementById('matches-panel').style.display = 'none';
+  document.getElementById('match-view').classList.add('hidden');
+  document.getElementById('grouping-view').classList.add('hidden');
+  document.getElementById('global-view').classList.add('hidden');
+  document.querySelector('main').style.gridTemplateColumns = '1fr';
+}
+
+function renderTeamSelector() {
+  updateTeamChrome();
+  hideAppContentForGate();
+  setConnectionStatus('local');
+
+  const gate = document.getElementById('team-gate');
+  gate.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'team-selector-card';
+
+  const title = document.createElement('h2');
+  title.textContent = 'Choisir une équipe';
+  card.appendChild(title);
+
+  const intro = document.createElement('p');
+  intro.textContent = 'Sélectionne l’équipe à suivre. Aucun identifiant n’est à saisir à la main.';
+  card.appendChild(intro);
+
+  if (teamSelectionError) {
+    const warning = document.createElement('div');
+    warning.className = 'team-selector-warning';
+    warning.textContent = teamSelectionError;
+    card.appendChild(warning);
+  }
+
+  const teams = validConfiguredTeams();
+  if (!teams.length) {
+    const empty = document.createElement('p');
+    empty.textContent = 'Aucune équipe n’est configurée dans APP_CONFIG.teams.';
+    card.appendChild(empty);
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'team-selector-grid';
+    teams.forEach(team => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'team-select-card';
+      btn.onclick = () => { window.location.href = teamUrl(team.id); };
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = team.label || team.id;
+      btn.appendChild(name);
+
+      const id = document.createElement('span');
+      id.className = 'id';
+      id.textContent = `?team=${team.id}`;
+      btn.appendChild(id);
+
+      grid.appendChild(btn);
+    });
+    card.appendChild(grid);
+  }
+
+  gate.appendChild(card);
+}
+
+function renderTeamGateMessage(titleText, bodyText, actions = []) {
+  updateTeamChrome();
+  hideAppContentForGate();
+
+  const gate = document.getElementById('team-gate');
+  gate.innerHTML = '';
+
+  const card = document.createElement('div');
+  card.className = 'team-gate-message';
+
+  const title = document.createElement('h2');
+  title.textContent = titleText;
+  card.appendChild(title);
+
+  const body = document.createElement('p');
+  body.textContent = bodyText;
+  card.appendChild(body);
+
+  if (actions.length) {
+    const row = document.createElement('div');
+    row.className = 'modal-actions';
+    actions.forEach(action => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn' + (action.primary ? ' primary' : '');
+      btn.textContent = action.label;
+      btn.onclick = action.onclick;
+      row.appendChild(btn);
+    });
+    card.appendChild(row);
+  }
+
+  gate.appendChild(card);
+}
+
+function renderTeamMissingGate() {
+  const actions = [
+    { label: 'Changer d’équipe', onclick: () => { window.location.href = teamSelectorUrl(); } }
+  ];
+
+  if (isCoach) {
+    actions.push({ label: 'Créer l’équipe', primary: true, onclick: createMissingTeamDocument });
+  } else {
+    actions.push({ label: 'Connexion coach', primary: true, onclick: showCoachUnlockModal });
+  }
+
+  renderTeamGateMessage(
+    'Équipe à initialiser',
+    'Cette équipe existe dans la configuration, mais son document Firebase n’a pas encore été créé. Un coach doit se connecter une première fois pour l’initialiser.',
+    actions
+  );
+}
+
 function render() {
+  updateTeamChrome();
+  if (!activeTeamConfig) {
+    renderTeamSelector();
+    return;
+  }
+  if (teamDocumentStatus === 'checking') {
+    renderTeamGateMessage('Chargement de l’équipe', 'Vérification du document Firebase en cours…');
+    return;
+  }
+  if (teamDocumentStatus === 'creating') {
+    renderTeamGateMessage('Création de l’équipe', 'Initialisation sécurisée du document Firebase…');
+    return;
+  }
+  if (teamDocumentStatus === 'missing') {
+    renderTeamMissingGate();
+    return;
+  }
+
+  document.getElementById('team-gate').classList.add('hidden');
   renderDisciplineTabs();
   renderTeamTabs();
   renderCompTabs();
@@ -4771,8 +5188,14 @@ document.addEventListener('keydown', (e) => {
 // ───────────────────────────────────────────────────────────
 (async () => {
   applyAppConfig();
+  configureActiveTeamFromUrl();
   document.getElementById('mode-toggle').onclick = toggleCoachMode;
+  document.getElementById('team-switch').onclick = () => { window.location.href = teamSelectorUrl(); };
   applyCoachMode();
+  if (!activeTeamConfig) {
+    render();
+    return;
+  }
   await loadState();
   render();
 })();
