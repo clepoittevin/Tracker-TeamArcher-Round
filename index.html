@@ -1798,7 +1798,7 @@ const APP_CONFIG = {
   // un document Firestore existant dont le nom n'est pas URL-friendly.
   teams: [
     { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' }
-  ]
+  ],
   // Le mot de passe coach n'est PLUS dans le code : la connexion se fait
   // via Firebase Authentication (comptes créés dans la console Firebase).
   // Voir la section « Sécurité » du README.
@@ -1813,6 +1813,7 @@ function applyAppConfig() {
 
 const TEAM_PARAM = 'team';
 const TEAM_ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
+const TEAM_DOC_ID_RE = /^[^\u0000-\u001F\u007F/]{1,120}$/;
 let activeTeamConfig = null;
 let TEAM_ID = null;
 let teamSelectionError = '';
@@ -1821,7 +1822,7 @@ function validConfiguredTeams() {
   return (APP_CONFIG.teams || []).filter(team => {
     const id = String(team && team.id || '');
     const docId = String(team && (team.docId || team.id) || '');
-    return TEAM_ID_RE.test(id) && docId && !docId.includes('/');
+    return TEAM_ID_RE.test(id) && TEAM_DOC_ID_RE.test(docId);
   });
 }
 
@@ -1865,6 +1866,10 @@ function teamSelectorUrl() {
   url.searchParams.delete(TEAM_PARAM);
   url.hash = '';
   return url.pathname + url.search;
+}
+
+function goToTeamSelector() {
+  window.location.href = teamSelectorUrl();
 }
 
 const INPUT_LIMITS = {
@@ -2125,6 +2130,8 @@ let targetHistory = [];          // Recent arrows entered via target, for undo t
 let firebaseAuth = null;     // Instance Firebase Auth (définie dans initFirebase)
 let currentUser = null;      // Utilisateur connecté, ou null
 let isCoach = false;         // Vrai uniquement si un coach est authentifié
+let authSignIn = null;
+let authSignOut = null;
 function READ_ONLY() { return !isCoach; }
 
 function applyCoachMode() {
@@ -2212,7 +2219,7 @@ function showCoachUnlockModal() {
 
   const attempt = async () => {
     errorEl.textContent = '';
-    if (!window._authSignIn) {
+    if (!authSignIn) {
       errorEl.textContent = 'Connexion à Firebase en cours, réessaie dans un instant…';
       return;
     }
@@ -2222,7 +2229,7 @@ function showCoachUnlockModal() {
     okBtn.disabled = true;
     okBtn.textContent = 'Connexion…';
     try {
-      await window._authSignIn(email, pwd);
+      await authSignIn(email, pwd);
       // onAuthStateChanged s'occupe de passer en mode coach + re-render.
       close();
       showToast('Mode coach activé — saisie disponible');
@@ -2271,7 +2278,7 @@ function showCoachLockModal() {
 
   overlay.querySelector('#coach-lock-cancel').onclick = close;
   overlay.querySelector('#coach-lock-ok').onclick = async () => {
-    try { if (window._authSignOut) await window._authSignOut(); } catch (e) {}
+    try { if (authSignOut) await authSignOut(); } catch (e) {}
     // onAuthStateChanged repassera isCoach à false + re-render.
     close();
     showToast('Mode spectateur activé');
@@ -2301,8 +2308,12 @@ let firestoreUnsubscribe = null;
 let isApplyingRemote = false;  // Guard to skip echo-save when we get our own write back
 let lastLocalPayload = null;   // Last JSON we wrote — used to compare incoming snapshots
 let firestoreReady = false;
+let firestoreSetDoc = null;
+let firestoreServerTimestamp = null;
+let firestoreGetDocFromServer = null;
+let firestoreRunTransaction = null;
 let lastRemoteSaveErrorAt = 0;
-let teamDocumentStatus = 'ready'; // ready, checking, missing, creating
+let teamDocumentStatus = 'ready'; // ready, checking, missing, creating, invalid
 let teamCreationInProgress = false;
 
 function firebaseConfigIsPlaceholder() {
@@ -2316,8 +2327,23 @@ function resetStateForNewTeam() {
   resolveActiveMatch();
 }
 
+function applyRemotePayload(remotePayload) {
+  const remoteState = JSON.parse(remotePayload);
+  state = { ...defaultState(), ...remoteState };
+  migrateState();
+  resolveActiveMatch();
+  try { localStorage.setItem(STORAGE_KEY, remotePayload); } catch (e) {}
+  lastLocalPayload = remotePayload;
+}
+
+function markTeamDocumentInvalid() {
+  teamDocumentStatus = 'invalid';
+  setConnectionStatus('error');
+  if (typeof render === 'function') render();
+}
+
 async function createMissingTeamDocument() {
-  if (!firestoreReady || !teamDocRef || !window._fsSetDoc || teamCreationInProgress) return false;
+  if (!firestoreReady || !teamDocRef || !firestoreRunTransaction || teamCreationInProgress) return false;
   if (!firebaseAuth || !firebaseAuth.currentUser) {
     teamDocumentStatus = 'missing';
     if (typeof render === 'function') render();
@@ -2329,19 +2355,34 @@ async function createMissingTeamDocument() {
   setConnectionStatus('pending');
   if (typeof render === 'function') render();
 
-  resetStateForNewTeam();
-  const payload = JSON.stringify(state);
-  lastLocalPayload = payload;
+  const payload = JSON.stringify(defaultState());
 
   try {
-    await window._fsSetDoc(teamDocRef, {
-      payload: payload,
-      updatedAt: window._fsServerTimestamp()
+    const result = await firestoreRunTransaction(firestoreDb, async (transaction) => {
+      const snap = await transaction.get(teamDocRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return data && data.payload
+          ? { created: false, payload: data.payload }
+          : { created: false, invalid: true };
+      }
+      transaction.set(teamDocRef, {
+        payload: payload,
+        updatedAt: firestoreServerTimestamp()
+      });
+      return { created: true, payload: payload };
     });
-    try { localStorage.setItem(STORAGE_KEY, payload); } catch (e) {}
+
+    if (result.invalid) {
+      markTeamDocumentInvalid();
+      showToast('Document Firebase invalide : aucune donnée écrasée');
+      return false;
+    }
+
+    applyRemotePayload(result.payload);
     teamDocumentStatus = 'ready';
     setConnectionStatus('online');
-    showToast('Équipe créée — saisie disponible');
+    showToast(result.created ? 'Équipe créée — saisie disponible' : 'Équipe déjà initialisée — données chargées');
     if (typeof render === 'function') render();
     return true;
   } catch (e) {
@@ -2377,14 +2418,15 @@ async function initFirebase() {
     firestoreDb = fsMod.getFirestore(firebaseApp);
     teamDocRef = fsMod.doc(firestoreDb, 'teams', TEAM_ID);
     firestoreReady = true;
-    window._fsSetDoc = fsMod.setDoc;
-    window._fsServerTimestamp = fsMod.serverTimestamp;
+    firestoreSetDoc = fsMod.setDoc;
+    firestoreServerTimestamp = fsMod.serverTimestamp;
+    firestoreGetDocFromServer = fsMod.getDocFromServer;
+    firestoreRunTransaction = fsMod.runTransaction;
 
     // ─── Auth : suit l'état de connexion du coach ───
     firebaseAuth = authMod.getAuth(firebaseApp);
-    // Expose les fonctions de connexion/déconnexion pour les fenêtres modales.
-    window._authSignIn = (email, pwd) => authMod.signInWithEmailAndPassword(firebaseAuth, email, pwd);
-    window._authSignOut = () => authMod.signOut(firebaseAuth);
+    authSignIn = (email, pwd) => authMod.signInWithEmailAndPassword(firebaseAuth, email, pwd);
+    authSignOut = () => authMod.signOut(firebaseAuth);
     // À chaque changement (connexion, déconnexion, ou session restaurée au
     // rechargement), on met à jour le mode coach/spectateur et on rafraîchit.
     authMod.onAuthStateChanged(firebaseAuth, async (user) => {
@@ -2426,12 +2468,7 @@ async function initFirebase() {
       }
       const data = snap.data();
       if (!data || !data.payload) {
-        teamDocumentStatus = 'missing';
-        if (firebaseAuth && firebaseAuth.currentUser) {
-          createMissingTeamDocument();
-        } else if (typeof render === 'function') {
-          render();
-        }
+        markTeamDocumentInvalid();
         return;
       }
       teamDocumentStatus = 'ready';
@@ -2440,19 +2477,12 @@ async function initFirebase() {
       if (remotePayload === lastLocalPayload) return;
       isApplyingRemote = true;
       try {
-        const remoteState = JSON.parse(remotePayload);
-        state = { ...defaultState(), ...remoteState };
-        migrateState();
-        // If the match we were viewing got deleted on another device, or the
-        // comp was renamed/removed, fall back to a valid one so we don't crash.
-        resolveActiveMatch();
-        // Cache locally too
-        try { localStorage.setItem(STORAGE_KEY, remotePayload); } catch (e) {}
-        lastLocalPayload = remotePayload;
+        applyRemotePayload(remotePayload);
         // Re-render current view (but don't re-open target modal etc.)
         if (typeof render === 'function') render();
       } catch (e) {
         console.error('Bad remote payload:', e);
+        markTeamDocumentInvalid();
       } finally {
         isApplyingRemote = false;
       }
@@ -2463,7 +2493,7 @@ async function initFirebase() {
 
     // Vérifie explicitement l'existence du document : si l'équipe n'a pas encore
     // été initialisée, seul un coach connecté pourra la créer automatiquement.
-    const initialSnap = await fsMod.getDocFromServer(teamDocRef);
+    const initialSnap = await firestoreGetDocFromServer(teamDocRef);
     if (!initialSnap.exists()) {
       teamDocumentStatus = 'missing';
       if (firebaseAuth && firebaseAuth.currentUser) {
@@ -2482,13 +2512,13 @@ async function initFirebase() {
 }
 
 async function pushStateToFirestore() {
-  if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !window._fsSetDoc) return false;
+  if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !firestoreSetDoc) return false;
   const payload = JSON.stringify(state);
   lastLocalPayload = payload;
   try {
-    await window._fsSetDoc(teamDocRef, {
+    await firestoreSetDoc(teamDocRef, {
       payload: payload,
-      updatedAt: window._fsServerTimestamp()
+      updatedAt: firestoreServerTimestamp()
     });
     return true;
   } catch (e) {
@@ -5086,7 +5116,7 @@ function renderTeamGateMessage(titleText, bodyText, actions = []) {
 
 function renderTeamMissingGate() {
   const actions = [
-    { label: 'Changer d’équipe', onclick: () => { window.location.href = teamSelectorUrl(); } }
+    { label: 'Changer d’équipe', onclick: goToTeamSelector }
   ];
 
   if (isCoach) {
@@ -5099,6 +5129,17 @@ function renderTeamMissingGate() {
     'Équipe à initialiser',
     'Cette équipe existe dans la configuration, mais son document Firebase n’a pas encore été créé. Un coach doit se connecter une première fois pour l’initialiser.',
     actions
+  );
+}
+
+function renderTeamInvalidGate() {
+  renderTeamGateMessage(
+    'Document Firebase invalide',
+    'Le document de cette équipe existe déjà, mais il ne contient pas de payload exploitable. Par sécurité, l’application ne l’écrase pas automatiquement.',
+    [
+      { label: 'Changer d’équipe', onclick: goToTeamSelector },
+      { label: 'Réessayer', primary: true, onclick: () => window.location.reload() }
+    ]
   );
 }
 
@@ -5118,6 +5159,10 @@ function render() {
   }
   if (teamDocumentStatus === 'missing') {
     renderTeamMissingGate();
+    return;
+  }
+  if (teamDocumentStatus === 'invalid') {
+    renderTeamInvalidGate();
     return;
   }
 
@@ -5190,7 +5235,7 @@ document.addEventListener('keydown', (e) => {
   applyAppConfig();
   configureActiveTeamFromUrl();
   document.getElementById('mode-toggle').onclick = toggleCoachMode;
-  document.getElementById('team-switch').onclick = () => { window.location.href = teamSelectorUrl(); };
+  document.getElementById('team-switch').onclick = goToTeamSelector;
   applyCoachMode();
   if (!activeTeamConfig) {
     render();
