@@ -2493,8 +2493,10 @@ async function initFirebase() {
       // Not fatal — online sync still works.
       console.warn('Firestore offline persistence unavailable:', persistErr.code);
     }
-    // Live listener
-    firestoreUnsubscribe = fsMod.onSnapshot(teamDocRef, (snap) => {
+    // Live listener. includeMetadataChanges is important with IndexedDB
+    // persistence: Firestore may first serve cached data, then only metadata
+    // changes when the server confirms the same data is current.
+    firestoreUnsubscribe = fsMod.onSnapshot(teamDocRef, { includeMetadataChanges: true }, (snap) => {
       setConnectionStatus(snap.metadata.fromCache ? 'offline' : 'online');
       if (!snap.exists()) {
         if (snap.metadata.fromCache) {
@@ -2539,6 +2541,7 @@ async function initFirebase() {
     // Vérifie explicitement l'existence du document : si l'équipe n'a pas encore
     // été initialisée, seul un coach connecté pourra la créer automatiquement.
     const initialSnap = await firestoreGetDocFromServer(teamDocRef);
+    setConnectionStatus('online');
     if (!initialSnap.exists()) {
       teamDocumentStatus = 'missing';
       if (firebaseAuth && firebaseAuth.currentUser) {
