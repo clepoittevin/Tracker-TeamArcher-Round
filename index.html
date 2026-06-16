@@ -319,10 +319,7 @@
     border: 1px solid var(--line);
     background: var(--bg);
     color: var(--ink);
-    padding: 1rem;
     border-radius: 8px;
-    text-align: left;
-    cursor: pointer;
     font-family: inherit;
     transition: all 0.12s;
   }
@@ -330,16 +327,49 @@
     border-color: var(--gold);
     transform: translateY(-1px);
   }
+  .team-open-button:focus-visible,
+  .team-link-copy:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 3px;
+  }
+  .team-open-button {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 1rem 1rem 0.55rem;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+  }
   .team-select-card .name {
     display: block;
     font-weight: 700;
     margin-bottom: 0.25rem;
   }
-  .team-select-card .id {
+  .team-select-card .meta {
     display: block;
     color: var(--ink-mute);
-    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+  .team-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 1rem 0.75rem;
+  }
+  .team-link-copy {
+    border: 0;
+    background: transparent;
+    color: var(--ink-mute);
+    font-family: inherit;
     font-size: 0.72rem;
+    cursor: pointer;
+    padding: 2px 0;
+  }
+  .team-link-copy:hover {
+    color: var(--gold);
   }
   .team-gate-message {
     text-align: center;
@@ -1797,7 +1827,7 @@ const APP_CONFIG = {
   // et doit rester stable. Le docId est optionnel : il permet de conserver
   // un document Firestore existant dont le nom n'est pas URL-friendly.
   teams: [
-    { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' }
+    { id: 'equipe-d1', label: 'Équipe D1', description: 'Feuille principale', docId: 'Equipe D1' }
   ],
   // Le mot de passe coach n'est PLUS dans le code : la connexion se fait
   // via Firebase Authentication (comptes créés dans la console Firebase).
@@ -1814,6 +1844,7 @@ function applyAppConfig() {
 const TEAM_PARAM = 'team';
 const TEAM_ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const TEAM_DOC_ID_RE = /^[^\u0000-\u001F\u007F/]{1,120}$/;
+const SCHEMA_VERSION = 1;
 let activeTeamConfig = null;
 let TEAM_ID = null;
 let teamSelectionError = '';
@@ -1861,6 +1892,10 @@ function teamUrl(teamId) {
   return url.pathname + url.search;
 }
 
+function absoluteTeamUrl(teamId) {
+  return new URL(teamUrl(teamId), window.location.origin).href;
+}
+
 function teamSelectorUrl() {
   const url = new URL(window.location.href);
   url.searchParams.delete(TEAM_PARAM);
@@ -1870,6 +1905,16 @@ function teamSelectorUrl() {
 
 function goToTeamSelector() {
   window.location.href = teamSelectorUrl();
+}
+
+async function copyTeamLink(teamId) {
+  const url = absoluteTeamUrl(teamId);
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Lien de l’équipe copié');
+  } catch (e) {
+    window.prompt('Copiez le lien de cette équipe :', url);
+  }
 }
 
 const INPUT_LIMITS = {
@@ -1987,6 +2032,7 @@ function defaultState() {
   // New hierarchy: Disciplines → Équipes → Compétitions → Matches.
   // The historical data is the outdoor (extérieur) 70m women's recurve team.
   return {
+    schemaVersion: SCHEMA_VERSION,
     disciplines: {
       'Extérieur': {
         teamOrder: ['Femme classique'],
@@ -2232,7 +2278,7 @@ function showCoachUnlockModal() {
       await authSignIn(email, pwd);
       // onAuthStateChanged s'occupe de passer en mode coach + re-render.
       close();
-      showToast('Mode coach activé — saisie disponible');
+      showToast('Connexion coach réussie');
     } catch (err) {
       okBtn.disabled = false;
       okBtn.textContent = 'Se connecter';
@@ -2355,7 +2401,7 @@ async function createMissingTeamDocument() {
   setConnectionStatus('pending');
   if (typeof render === 'function') render();
 
-  const payload = JSON.stringify(defaultState());
+  const payload = serializeState(defaultState());
 
   try {
     const result = await firestoreRunTransaction(firestoreDb, async (transaction) => {
@@ -2513,7 +2559,7 @@ async function initFirebase() {
 
 async function pushStateToFirestore() {
   if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !firestoreSetDoc) return false;
-  const payload = JSON.stringify(state);
+  const payload = serializeState();
   lastLocalPayload = payload;
   try {
     await firestoreSetDoc(teamDocRef, {
@@ -2712,6 +2758,11 @@ function migrateState() {
     }
   }
   sanitizeStateFields();
+  state.schemaVersion = SCHEMA_VERSION;
+}
+
+function serializeState(source = state) {
+  return JSON.stringify({ ...source, schemaVersion: SCHEMA_VERSION });
 }
 
 async function saveState() {
@@ -2719,7 +2770,7 @@ async function saveState() {
   if (!activeTeamConfig || teamDocumentStatus !== 'ready') return;
   if (isApplyingRemote) return;   // Don't echo-save changes that came from Firestore
 
-  const payload = JSON.stringify(state);
+  const payload = serializeState();
 
   // Always cache locally (fast, synchronous, works offline)
   try { localStorage.setItem(STORAGE_KEY, payload); } catch (e) {}
@@ -4663,7 +4714,7 @@ function renderGlobalView() {
 // ───────────────────────────────────────────────────────────
 function exportData() {
   try {
-    const data = JSON.stringify(state, null, 2);
+    const data = JSON.stringify({ ...state, schemaVersion: SCHEMA_VERSION }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -5056,22 +5107,40 @@ function renderTeamSelector() {
     const grid = document.createElement('div');
     grid.className = 'team-selector-grid';
     teams.forEach(team => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'team-select-card';
-      btn.onclick = () => { window.location.href = teamUrl(team.id); };
+      const card = document.createElement('div');
+      card.className = 'team-select-card';
+
+      const openBtn = document.createElement('button');
+      openBtn.type = 'button';
+      openBtn.className = 'team-open-button';
+      openBtn.onclick = () => { window.location.href = teamUrl(team.id); };
 
       const name = document.createElement('span');
       name.className = 'name';
       name.textContent = team.label || team.id;
-      btn.appendChild(name);
+      openBtn.appendChild(name);
 
-      const id = document.createElement('span');
-      id.className = 'id';
-      id.textContent = `?team=${team.id}`;
-      btn.appendChild(id);
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = team.description || 'Suivre cette équipe';
+      openBtn.appendChild(meta);
+      card.appendChild(openBtn);
 
-      grid.appendChild(btn);
+      const actions = document.createElement('div');
+      actions.className = 'team-card-actions';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'team-link-copy';
+      copy.textContent = 'Copier le lien';
+      copy.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyTeamLink(team.id);
+      };
+      actions.appendChild(copy);
+      card.appendChild(actions);
+
+      grid.appendChild(card);
     });
     card.appendChild(grid);
   }

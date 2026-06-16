@@ -21,7 +21,9 @@ seconde).
 5. [Étape 4 — Héberger le site (Netlify)](#-étape-4--héberger-le-site-netlify)
 6. [Tester en local (optionnel)](#-tester-en-local-optionnel)
 7. [Plusieurs équipes sur la même base](#-plusieurs-équipes-sur-la-même-base)
-8. [Questions fréquentes](#-questions-fréquentes)
+8. [Sécurité — qui peut modifier les scores ?](#-sécurité--qui-peut-modifier-les-scores)
+9. [Checklist compétition](CHECKLIST_COMPETITION.md)
+10. [Questions fréquentes](#-questions-fréquentes)
 
 ---
 
@@ -31,8 +33,9 @@ seconde).
 - L'état complet du tournoi (matchs, scores, équipes…) est enregistré :
   - dans le **navigateur** (`localStorage`) → affichage immédiat, fonctionne même hors ligne ;
   - dans **Firebase Firestore** → partage en temps réel entre tous les appareils.
-- Dans Firestore, tout est stocké dans **un seul document** : la collection `teams`, document
-  `equipe-principale`, avec un champ `payload` (le tournoi complet au format JSON) et un champ `updatedAt`.
+- Dans Firestore, chaque équipe configurée utilise **son propre document** dans la collection `teams`,
+  avec un champ `payload` (le tournoi complet au format JSON, versionné par `schemaVersion`) et un
+  champ `updatedAt`.
 
 Pour avoir votre propre version, vous devez :
 1. créer **votre** projet Firebase,
@@ -151,15 +154,16 @@ Le choix des équipes se fait plus haut dans le bloc `APP_CONFIG`, via la liste 
 
 ```js
 teams: [
-  { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' },
-  { id: 'd1-femme-classique', label: 'D1 Femme classique' },
-  { id: 'd1-homme-classique', label: 'D1 Homme classique' }
+  { id: 'equipe-d1', label: 'Équipe D1', description: 'Feuille principale', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique', description: 'Classique · Femme' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique', description: 'Classique · Homme' }
 ]
 ```
 
 - **`id`** sert dans l'URL (`?team=equipe-d1`). Gardez-le stable, en minuscules, sans accents,
   avec des tirets à la place des espaces.
 - **`label`** est le nom affiché dans le sélecteur. Vous pouvez le renommer librement.
+- **`description`** est optionnel : il ajoute une aide courte sous le nom de l'équipe.
 - **`docId`** est optionnel. Il sert uniquement si vous voulez pointer vers un document Firestore
   existant dont le nom est différent de l'`id`.
 
@@ -172,7 +176,8 @@ Si le document n'existe pas encore, un coach connecté peut l'initialiser automa
 simplement le fichier).
 
 C'est tout côté configuration : l'application applique automatiquement votre nom de club et votre
-titre au chargement, et crée le document dans Firestore au premier lancement.
+titre au chargement. Le document Firestore de chaque équipe est créé automatiquement la première fois
+qu'un coach connecté ouvre cette équipe.
 
 ---
 
@@ -255,9 +260,9 @@ depuis l'écran d'accueil.
 
 ```js
 teams: [
-  { id: 'equipe-d1', label: 'Équipe D1', docId: 'Equipe D1' },
-  { id: 'd1-femme-classique', label: 'D1 Femme classique' },
-  { id: 'd1-homme-classique', label: 'D1 Homme classique' }
+  { id: 'equipe-d1', label: 'Équipe D1', description: 'Feuille principale', docId: 'Equipe D1' },
+  { id: 'd1-femme-classique', label: 'D1 Femme classique', description: 'Classique · Femme' },
+  { id: 'd1-homme-classique', label: 'D1 Homme classique', description: 'Classique · Homme' }
 ]
 ```
 
@@ -277,7 +282,8 @@ https://votre-site.netlify.app/?team=d1-femme-classique
 ```
 
 Vous pouvez partager ces liens directement ou générer des QR codes pour le terrain. Personne n'a
-besoin de saisir l'URL à la main.
+besoin de saisir l'URL à la main. Le sélecteur affiche aussi un bouton **Copier le lien** pour chaque
+équipe.
 
 Chaque équipe utilise son propre document Firestore :
 
@@ -293,7 +299,7 @@ avec une feuille vierge.
 
 Pour **ajouter** une équipe, ajoutez une ligne dans `APP_CONFIG.teams`. Pour **retirer** une équipe,
 retirez sa ligne : elle disparaît du sélecteur, mais ses données Firestore ne sont pas supprimées.
-Pour supprimer définitivement les données, supprimez aussi le document `teams/<id>` dans Firebase.
+Pour supprimer définitivement les données, supprimez aussi le document `teams/<docId ou id>` dans Firebase.
 
 Important : ne changez pas l'`id` d'une équipe existante sauf si vous voulez créer un nouveau document
 Firestore. Le `label`, lui, peut être modifié sans perdre les données.
@@ -334,25 +340,36 @@ Il y a **trois choses** à régler dans la console Firebase, une seule fois :
 
 ### C. Verrouiller les règles Firestore
 
-Console Firebase → **Firestore Database → Règles** (*Rules*) → collez ceci → **Publier** :
+Console Firebase → **Firestore Database → Règles** (*Rules*) → collez ceci → remplacez les emails
+par vos comptes coach → **Publier** :
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /teams/{teamId} {
-      allow read: if true;                  // Lecture publique (spectateurs)
-      allow write: if request.auth != null; // Écriture réservée aux coachs connectés
+      allow read: if true; // Lecture publique (spectateurs)
+
+      allow write: if request.auth != null
+        && request.auth.token.email in [
+          'coach1@exemple.fr',
+          'coach2@exemple.fr'
+        ]
+        && request.resource.data.keys().hasOnly(['payload', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['payload', 'updatedAt'])
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() < 900000;
     }
   }
 }
 ```
 
-> ✅ Avec ces règles : **lecture pour tous**, **écriture seulement pour un compte connecté**. Un
-> visiteur (ou un robot) qui tombe sur l'URL ne pourra **pas** modifier vos scores.
+> ✅ Avec ces règles : **lecture pour tous**, **écriture seulement pour les emails coach listés**. Un
+> visiteur (ou un robot) qui tombe sur l'URL ne pourra **pas** modifier vos scores, même s'il tente de
+> créer son propre compte Firebase Auth.
 
-> 💡 Pour restreindre encore plus (n'autoriser QUE des comptes précis), remplacez la ligne d'écriture
-> par : `allow write: if request.auth != null && request.auth.token.email in ['coach1@exemple.fr', 'coach2@exemple.fr'];`
+> ⚠️ Évitez la règle plus large `allow write: if request.auth != null` : elle autorise tout compte
+> authentifié du projet, ce qui est trop permissif pour un site public.
 
 ---
 
