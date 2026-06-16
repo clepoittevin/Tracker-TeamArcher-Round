@@ -2387,6 +2387,29 @@ function markTeamDocumentInvalid() {
   if (typeof render === 'function') render();
 }
 
+function handleTeamDocumentPayload(remotePayload, { forceRender = false } = {}) {
+  const previousStatus = teamDocumentStatus;
+  teamDocumentStatus = 'ready';
+
+  if (remotePayload === lastLocalPayload) {
+    if (forceRender || previousStatus !== 'ready') {
+      if (typeof render === 'function') render();
+    }
+    return;
+  }
+
+  isApplyingRemote = true;
+  try {
+    applyRemotePayload(remotePayload);
+    if (typeof render === 'function') render();
+  } catch (e) {
+    console.error('Bad remote payload:', e);
+    markTeamDocumentInvalid();
+  } finally {
+    isApplyingRemote = false;
+  }
+}
+
 async function createMissingTeamDocument() {
   if (!firestoreReady || !teamDocRef || !firestoreRunTransaction || teamCreationInProgress) return false;
   if (!firebaseAuth || !firebaseAuth.currentUser) {
@@ -2518,21 +2541,7 @@ async function initFirebase() {
         markTeamDocumentInvalid();
         return;
       }
-      teamDocumentStatus = 'ready';
-      const remotePayload = data.payload;
-      // Ignore echoes of our own writes
-      if (remotePayload === lastLocalPayload) return;
-      isApplyingRemote = true;
-      try {
-        applyRemotePayload(remotePayload);
-        // Re-render current view (but don't re-open target modal etc.)
-        if (typeof render === 'function') render();
-      } catch (e) {
-        console.error('Bad remote payload:', e);
-        markTeamDocumentInvalid();
-      } finally {
-        isApplyingRemote = false;
-      }
+      handleTeamDocumentPayload(data.payload);
     }, (err) => {
       console.error('Firestore listener error:', err);
       setConnectionStatus('error');
@@ -2548,6 +2557,13 @@ async function initFirebase() {
         await createMissingTeamDocument();
       } else if (typeof render === 'function') {
         render();
+      }
+    } else {
+      const data = initialSnap.data();
+      if (!data || !data.payload) {
+        markTeamDocumentInvalid();
+      } else {
+        handleTeamDocumentPayload(data.payload, { forceRender: true });
       }
     }
   } catch (e) {
