@@ -1845,6 +1845,7 @@ const TEAM_PARAM = 'team';
 const TEAM_ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const TEAM_DOC_ID_RE = /^[^\u0000-\u001F\u007F/]{1,120}$/;
 const SCHEMA_VERSION = 1;
+const MAX_REMOTE_PAYLOAD_SIZE = 900000;
 let activeTeamConfig = null;
 let TEAM_ID = null;
 let teamSelectionError = '';
@@ -2387,6 +2388,29 @@ function markTeamDocumentInvalid() {
   if (typeof render === 'function') render();
 }
 
+function currentCoachEmail() {
+  return (currentUser && currentUser.email) ||
+         (firebaseAuth && firebaseAuth.currentUser && firebaseAuth.currentUser.email) ||
+         '';
+}
+
+function remotePayloadIsTooLarge(payload) {
+  return String(payload || '').length >= MAX_REMOTE_PAYLOAD_SIZE;
+}
+
+function remotePayloadSizeLabel(payload) {
+  return Math.ceil(String(payload || '').length / 1024) + ' Ko';
+}
+
+function remoteWriteMetadata() {
+  const email = currentCoachEmail();
+  if (!email) throw new Error('Compte coach sans email disponible');
+  return {
+    updatedAt: firestoreServerTimestamp(),
+    updatedBy: email
+  };
+}
+
 function handleTeamDocumentPayload(remotePayload, { forceRender = false } = {}) {
   const previousStatus = teamDocumentStatus;
   teamDocumentStatus = 'ready';
@@ -2424,8 +2448,17 @@ async function createMissingTeamDocument() {
   if (typeof render === 'function') render();
 
   const payload = serializeState(defaultState());
+  if (remotePayloadIsTooLarge(payload)) {
+    teamDocumentStatus = 'missing';
+    setConnectionStatus('error');
+    showToast(`Création bloquée : données trop volumineuses (${remotePayloadSizeLabel(payload)})`);
+    if (typeof render === 'function') render();
+    teamCreationInProgress = false;
+    return false;
+  }
 
   try {
+    const metadata = remoteWriteMetadata();
     const result = await firestoreRunTransaction(firestoreDb, async (transaction) => {
       const snap = await transaction.get(teamDocRef);
       if (snap.exists()) {
@@ -2436,7 +2469,7 @@ async function createMissingTeamDocument() {
       }
       transaction.set(teamDocRef, {
         payload: payload,
-        updatedAt: firestoreServerTimestamp()
+        ...metadata
       });
       return { created: true, payload: payload };
     });
@@ -2576,18 +2609,33 @@ async function initFirebase() {
 }
 
 async function pushStateToFirestore() {
-  if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !firestoreSetDoc) return false;
+  if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !firestoreSetDoc) return { ok: false };
   const payload = serializeState();
+
+  if (remotePayloadIsTooLarge(payload)) {
+    showToast(`Sauvegarde Firebase bloquée : données trop volumineuses (${remotePayloadSizeLabel(payload)})`);
+    return { ok: false, handled: true };
+  }
+
+  let metadata;
+  try {
+    metadata = remoteWriteMetadata();
+  } catch (e) {
+    console.error('Firestore metadata unavailable:', e);
+    showToast('Sauvegarde Firebase bloquée : reconnecte-toi en mode coach');
+    return { ok: false, handled: true };
+  }
+
   lastLocalPayload = payload;
   try {
     await firestoreSetDoc(teamDocRef, {
       payload: payload,
-      updatedAt: firestoreServerTimestamp()
+      ...metadata
     });
-    return true;
+    return { ok: true };
   } catch (e) {
     console.error('Firestore write failed:', e);
-    return false;
+    return { ok: false };
   }
 }
 
@@ -2801,8 +2849,8 @@ async function saveState() {
 
   // Push to Firestore (the shared source of truth)
   if (firestoreReady) {
-    pushStateToFirestore().then((ok) => {
-      if (ok) return;
+    pushStateToFirestore().then((result) => {
+      if (result && (result.ok || result.handled)) return;
       const now = Date.now();
       if (now - lastRemoteSaveErrorAt > 10000) {
         lastRemoteSaveErrorAt = now;

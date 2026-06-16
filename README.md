@@ -35,7 +35,8 @@ seconde).
   - dans **Firebase Firestore** → partage en temps réel entre tous les appareils.
 - Dans Firestore, chaque équipe configurée utilise **son propre document** dans la collection `teams`,
   avec un champ `payload` (le tournoi complet au format JSON, versionné par `schemaVersion`) et un
-  champ `updatedAt`.
+  champ `updatedAt`. À chaque sauvegarde, l'app ajoute aussi `updatedBy` avec l'email du coach qui a
+  écrit la dernière version.
 
 Pour avoir votre propre version, vous devez :
 1. créer **votre** projet Firebase,
@@ -356,10 +357,11 @@ service cloud.firestore {
           'coach1@exemple.fr',
           'coach2@exemple.fr'
         ]
-        && request.resource.data.keys().hasOnly(['payload', 'updatedAt'])
-        && request.resource.data.keys().hasAll(['payload', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['payload', 'updatedAt', 'updatedBy'])
+        && request.resource.data.keys().hasAll(['payload', 'updatedAt', 'updatedBy'])
         && request.resource.data.payload is string
-        && request.resource.data.payload.size() < 900000;
+        && request.resource.data.payload.size() < 900000
+        && request.resource.data.updatedBy == request.auth.token.email;
     }
   }
 }
