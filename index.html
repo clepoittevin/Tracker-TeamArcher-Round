@@ -2169,10 +2169,9 @@ let targetHistory = [];          // Recent arrows entered via target, for undo t
 // Les visiteurs voient les scores en LECTURE SEULE (mode spectateur).
 // Seuls les comptes coach — créés dans la console Firebase → Authentication —
 // peuvent se connecter (email + mot de passe) pour saisir les scores.
-// La vraie protection vient de la règle Firestore
-//   « allow write: if request.auth != null »
-// qui empêche, CÔTÉ SERVEUR, toute écriture sans être connecté. Le mode
-// spectateur n'est donc plus une simple barrière visuelle.
+// La vraie protection vient des règles Firestore : lecture publique,
+// écriture réservée aux emails coach explicitement autorisés. Le mode
+// spectateur n'est donc pas une simple barrière visuelle.
 let firebaseAuth = null;     // Instance Firebase Auth (définie dans initFirebase)
 let currentUser = null;      // Utilisateur connecté, ou null
 let isCoach = false;         // Vrai uniquement si un coach est authentifié

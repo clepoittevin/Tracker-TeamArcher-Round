@@ -316,8 +316,9 @@ L'application sépare deux rôles :
   **saisir** les scores.
 
 Cette séparation est garantie **côté serveur** par Firebase : même si quelqu'un trouve l'adresse du
-site et lit le code, il **ne peut pas écrire** dans la base sans être connecté avec un vrai compte
-coach. C'est une **vraie** protection (contrairement à un mot de passe écrit dans la page).
+site et lit le code, il **ne peut pas écrire** dans la base sans utiliser un email coach explicitement
+autorisé dans les règles Firestore. C'est une **vraie** protection (contrairement à un mot de passe
+écrit dans la page).
 
 Il y a **trois choses** à régler dans la console Firebase, une seule fois :
 
@@ -397,7 +398,7 @@ code.
 
 **Un visiteur peut-il modifier mes scores en lisant le code source ?**
 Non. Le code ne contient aucun mot de passe, et les **règles Firestore** interdisent toute écriture
-sans être connecté avec un compte coach. Un visiteur reste en lecture seule.
+hors des emails coach explicitement autorisés. Un visiteur reste en lecture seule.
 
 **Mes données et celles du club original sont-elles mélangées ?**
 Non, à condition d'utiliser **votre propre projet Firebase**. Chaque projet a sa propre base, isolée.
