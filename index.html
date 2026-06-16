@@ -2402,13 +2402,18 @@ function remotePayloadSizeLabel(payload) {
   return Math.ceil(String(payload || '').length / 1024) + ' Ko';
 }
 
-function remoteWriteMetadata() {
+function remoteWriteMetadata({ includeCreated = false } = {}) {
   const email = currentCoachEmail();
   if (!email) throw new Error('Compte coach sans email disponible');
-  return {
+  const metadata = {
     updatedAt: firestoreServerTimestamp(),
     updatedBy: email
   };
+  if (includeCreated) {
+    metadata.createdAt = firestoreServerTimestamp();
+    metadata.createdBy = email;
+  }
+  return metadata;
 }
 
 function handleTeamDocumentPayload(remotePayload, { forceRender = false } = {}) {
@@ -2458,7 +2463,7 @@ async function createMissingTeamDocument() {
   }
 
   try {
-    const metadata = remoteWriteMetadata();
+    const metadata = remoteWriteMetadata({ includeCreated: true });
     const result = await firestoreRunTransaction(firestoreDb, async (transaction) => {
       const snap = await transaction.get(teamDocRef);
       if (snap.exists()) {
@@ -2608,9 +2613,8 @@ async function initFirebase() {
   }
 }
 
-async function pushStateToFirestore() {
+async function pushStateToFirestore(payload = serializeState()) {
   if (teamDocumentStatus !== 'ready' || !firestoreReady || !teamDocRef || !firestoreSetDoc) return { ok: false };
-  const payload = serializeState();
 
   if (remotePayloadIsTooLarge(payload)) {
     showToast(`Sauvegarde Firebase bloquée : données trop volumineuses (${remotePayloadSizeLabel(payload)})`);
@@ -2631,7 +2635,7 @@ async function pushStateToFirestore() {
     await firestoreSetDoc(teamDocRef, {
       payload: payload,
       ...metadata
-    });
+    }, { merge: true });
     return { ok: true };
   } catch (e) {
     console.error('Firestore write failed:', e);
@@ -2849,7 +2853,7 @@ async function saveState() {
 
   // Push to Firestore (the shared source of truth)
   if (firestoreReady) {
-    pushStateToFirestore().then((result) => {
+    pushStateToFirestore(payload).then((result) => {
       if (result && (result.ok || result.handled)) return;
       const now = Date.now();
       if (now - lastRemoteSaveErrorAt > 10000) {
